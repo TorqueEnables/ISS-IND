@@ -1,0 +1,36 @@
+name: Fetch NSE PIT (30d)
+
+on:
+  schedule:
+    - cron: "10 4 * * *"   # runs ~09:40 IST daily (UTC 04:10)
+  workflow_dispatch:       # allow manual runs
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # allow committing CSVs back to repo
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          npm ci || npm i
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright fetcher
+        run: node scripts/pit_fetch.js
+
+      - name: Commit CSVs
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/*.csv
+          git commit -m "PIT update" || echo "No changes"
+          git push
