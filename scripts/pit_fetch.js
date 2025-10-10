@@ -1,7 +1,3 @@
-// scripts/pit_fetch.js
-// Uses real Chromium via Playwright in GitHub Actions.
-// Plan: warm up site → try API fetch with in-page cookies → if blocked, click "Download (.csv)" and save.
-
 import { chromium } from 'playwright';
 import { writeFileSync, mkdirSync } from 'fs';
 import path from 'path';
@@ -12,7 +8,6 @@ function fmt(d){
     .format(d).replace(/\//g,'-'); // dd-mm-yyyy
 }
 
-// Rolling window: FROM = today-30, TO = yesterday (IST)
 const now  = new Date();
 const to   = new Date(now); to.setDate(to.getDate()-1);
 const from = new Date(now); from.setDate(from.getDate()-30);
@@ -28,21 +23,58 @@ const LATEST  = path.join(OUT_DIR, 'CF-Insider-Trading-equities-latest.csv');
 const DATED   = path.join(OUT_DIR, `CF-Insider-Trading-equities-${FROM}-to-${TO}.csv`);
 
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  // --- hardened launch to avoid HTTP/2 protocol errors on CI ---
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--disable-http2',                          // <— key fix
+      '--no-sandbox',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process'
+    ]
+  });
+
   const ctx = await browser.newContext({
+    ignoreHTTPSErrors: true,
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     viewport: { width: 1366, height: 768 },
-    locale: 'en-US'
+    locale: 'en-US',
+    extraHTTPHeaders: {
+      'Accept-Language': 'en-US,en;q=0.9',
+      'sec-ch-ua': '"Not/A)Brand";v="99", "Chromium";v="126", "Google Chrome";v="126"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"'
+    }
   });
+
   const page = await ctx.newPage();
 
-  // Warm-up: homepage then insider page (sets cookies/anti-bot tokens)
-  await page.goto('https://www.nseindia.com/', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(1000);
-  await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded' });
+  // mask automation
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  });
+
+  // --- warm-up & navigation with fallbacks ---
+  try {
+    // try insider page directly (skip homepage that errored)
+    await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  } catch (e) {
+    console.log('Direct goto insider failed, trying homepage then insider…', String(e));
+    try {
+      await page.goto('https://www.nseindia.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await page.waitForTimeout(1200);
+      await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    } catch (e2) {
+      console.log('Both gotos failed, bailing early with clear error.');
+      throw e2;
+    }
+  }
+
   await page.waitForTimeout(1500);
 
-  // Try API fetch inside the page context (sends cookies)
+  // --- API fetch in page context (uses real cookies). If blocked, we click the button. ---
   try {
     const csvText = await page.evaluate(async (url) => {
       const resp = await fetch(url, {
@@ -65,26 +97,22 @@ const DATED   = path.join(OUT_DIR, `CF-Insider-Trading-equities-${FROM}-to-${TO}
       process.exit(0);
     }
   } catch (e) {
-    console.log('API fetch blocked, falling back to button click...', String(e));
+    console.log('API fetch blocked, falling back to button click…', String(e));
   }
 
-  // Fallback: click "Download (.csv)" and capture the download
-  // The button has visible text "Download (.csv)"
+  // Fallback: click "Download (.csv)"
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 30000 }),
     page.getByText('Download (.csv)').click()
   ]);
-  const csvPath = await download.path(); // temp path in runner
-  const csvBuf  = await download.createReadStream();
-
-  // Read the stream fully to a buffer
-  let chunks = [];
-  for await (const chunk of csvBuf) chunks.push(chunk);
-  const fileData = Buffer.concat(chunks);
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const ch of stream) chunks.push(ch);
+  const buf = Buffer.concat(chunks);
 
   mkdirSync(OUT_DIR, { recursive: true });
-  writeFileSync(LATEST, fileData);
-  writeFileSync(DATED,  fileData);
+  writeFileSync(LATEST, buf);
+  writeFileSync(DATED,  buf);
   console.log('Saved via button:', DATED);
 
   await browser.close();
