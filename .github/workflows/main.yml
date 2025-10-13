@@ -1,36 +1,46 @@
 name: Fetch NSE PIT (30d)
 
-on:
-  schedule:
-    - cron: "10 4 * * *"   # runs ~09:40 IST daily (UTC 04:10)
-  workflow_dispatch:       # allow manual runs
+permissions:
+  contents: write
+
+concurrency:
+  group: iss-data-updates
+  cancel-in-progress: false
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # allow committing CSVs back to repo
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          fetch-depth: 0        # get full history so rebase works
+          ref: main             # adjust if your default branch isn't main
+          persist-credentials: true
 
-      - name: Install dependencies
+      # ... your steps that fetch/build CSVs go here ...
+
+      - name: Commit CSVs if changed
         run: |
-          npm ci || npm i
-          npx playwright install --with-deps chromium
-
-      - name: Run Playwright fetcher
-        run: node scripts/pit_fetch.js
-
-      - name: Commit CSVs
-        run: |
+          set -e
           git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/*.csv
-          git commit -m "PIT update" || echo "No changes"
-          git push
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # exit if nothing changed
+          if git diff --quiet; then
+            echo "No changes — skipping push."
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "Data update: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          # rebase onto latest main and push (retry a couple of times if racing another run)
+          for attempt in 1 2 3; do
+            git pull --rebase origin main || true
+            if git push origin HEAD:main; then
+              echo "Pushed on attempt ${attempt}"
+              break
+            fi
+            echo "Push failed; retrying..."
+            sleep 3
+          done
