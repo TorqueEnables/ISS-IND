@@ -1,46 +1,56 @@
 name: Fetch NSE PIT (30d)
 
-permissions:
-  contents: write
+on:
+  schedule:
+    - cron: "10 4 * * *"    # ~09:40 IST
+  workflow_dispatch:
 
+# Prevent two runs from racing each other
 concurrency:
-  group: iss-data-updates
-  cancel-in-progress: false
+  group: pit-fetch-main
+  cancel-in-progress: true
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0        # get full history so rebase works
-          ref: main             # adjust if your default branch isn't main
+          fetch-depth: 0                 # full history, avoids push rejects
           persist-credentials: true
 
-      # ... your steps that fetch/build CSVs go here ...
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Commit CSVs if changed
+      - name: Install dependencies
         run: |
-          set -e
+          npm ci || npm i
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright fetcher
+        run: node scripts/pit_fetch.js
+
+      # --- Git config & sync with remote before committing ---
+      - name: Configure git
+        run: |
           git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git config pull.rebase true
 
-          # exit if nothing changed
-          if git diff --quiet; then
-            echo "No changes — skipping push."
-            exit 0
-          fi
+      - name: Pull latest (rebase) to avoid non-fast-forward
+        run: |
+          git fetch origin ${{ github.ref_name }}
+          git pull --rebase origin ${{ github.ref_name }} || true
 
-          git add -A
-          git commit -m "Data update: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-
-          # rebase onto latest main and push (retry a couple of times if racing another run)
-          for attempt in 1 2 3; do
-            git pull --rebase origin main || true
-            if git push origin HEAD:main; then
-              echo "Pushed on attempt ${attempt}"
-              break
-            fi
-            echo "Push failed; retrying..."
-            sleep 3
-          done
+      - name: Commit CSVs
+        run: |
+          git add -A data/*.csv
+          git commit -m "PIT update" || echo "No changes"
+          git push origin ${{ github.ref_name }}
