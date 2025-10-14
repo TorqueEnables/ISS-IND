@@ -2,12 +2,12 @@ name: Fetch NSE PIT (30d)
 
 on:
   schedule:
-    - cron: "10 4 * * *"    # ~09:40 IST
+    - cron: "20 2 * * *"   # 02:20 UTC ≈ 07:50 IST
   workflow_dispatch:
 
-# Prevent two runs from racing each other
+# avoid overlapping runs pushing on top of each other
 concurrency:
-  group: pit-fetch-main
+  group: pit-fetch-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0                 # full history, avoids push rejects
+          fetch-depth: 0                 # full history so rebases work
           persist-credentials: true
 
       - name: Setup Node
@@ -36,7 +36,6 @@ jobs:
       - name: Run Playwright fetcher
         run: node scripts/pit_fetch.js
 
-      # --- Git config & sync with remote before committing ---
       - name: Configure git
         run: |
           git config user.name  "github-actions[bot]"
@@ -44,7 +43,8 @@ jobs:
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git config pull.rebase true
 
-      - name: Pull latest (rebase) to avoid non-fast-forward
+      # (optional) bring latest before we stage, harmless if up-to-date
+      - name: Pull latest (pre-commit rebase)
         run: |
           git fetch origin ${{ github.ref_name }}
           git pull --rebase origin ${{ github.ref_name }} || true
@@ -52,5 +52,16 @@ jobs:
       - name: Commit CSVs
         run: |
           git add -A data/*.csv
-          git commit -m "PIT update" || echo "No changes"
-          git push origin ${{ github.ref_name }}
+          # make the step no-op if nothing changed
+          git diff --staged --quiet && echo "No changes" && exit 0 || true
+          git commit -m "PIT update: $(date -u +%F)"
+
+      # 🔑 rebase AGAIN after we just created our commit
+      - name: Rebase onto remote (post-commit)
+        run: |
+          git fetch origin ${{ github.ref_name }}
+          git pull --rebase --autostash origin ${{ github.ref_name }} || true
+
+      - name: Push
+        run: |
+          git push origin HEAD:${{ github.ref_name }}
