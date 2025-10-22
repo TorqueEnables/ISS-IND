@@ -23,14 +23,25 @@ jobs:
       - name: Fetch latest available bhavcopy (tries last 5 calendar days)
         run: bash scripts/fetch_prices.sh
 
+      - name: Show fetched files (debug)
+        run: |
+          echo "::group::Listing data/prices"
+          ls -la data/prices || true
+          echo "::endgroup::"
+
       - name: Commit changes (if any)
         run: |
+          set -e
           git config user.name "${GITHUB_ACTOR}"
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-          if ! git diff --quiet; then
-            git add -A
-            git commit -m "chore(prices): mirror bhavcopy"
-            git push
-          else
+
+          # Stage everything first (includes untracked files)
+          git add -A
+
+          # Commit only if there is something staged
+          if git diff --cached --quiet; then
             echo "No price updates to commit."
+          else
+            git commit -m "chore(prices): mirror bhavcopy via workflow $GITHUB_RUN_ID"
+            git push
           fi
