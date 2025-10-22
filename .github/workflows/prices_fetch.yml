@@ -2,9 +2,9 @@ name: Prices Mirror (NSE Bhavcopy)
 on:
 workflow_dispatch:
 schedule:
-- cron: "5 15 * * 1-5"
-- cron: "5 16 * * 1-5"
-- cron: "5 17 * * 1-5"
+- cron: '5 15 * * 1-5'
+- cron: '5 16 * * 1-5'
+- cron: '5 17 * * 1-5'
 permissions:
 contents: write
 concurrency:
