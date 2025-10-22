@@ -29,6 +29,9 @@ jobs:
           ls -la data/prices || true
           echo "::endgroup::"
 
+      - name: Build 90-day history CSV
+        run: bash scripts/build_prices_hist.sh
+
       - name: Commit changes (if any)
         run: |
           set -e
