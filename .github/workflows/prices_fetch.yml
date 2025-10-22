@@ -1,0 +1,49 @@
+name: Prices Mirror (NSE Bhavcopy)
+on:
+workflow_dispatch:
+schedule:
+- cron: "5 15 * * 1-5"
+- cron: "5 16 * * 1-5"
+- cron: "5 17 * * 1-5"
+permissions:
+contents: write
+concurrency:
+group: prices-fetch
+cancel-in-progress: false
+jobs:
+fetch-and-commit:
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v4
+- name: Fetch latest available bhavcopy (tries last 5 calendar days)
+shell: bash
+run: |
+set -euo pipefail
+mkdir -p data/prices
+found=""
+for i in 1 2 3 4 5; do
+d=$(date -u -d "$i day ago" +%d%m%Y)
+url="https://archives.nseindia.com/products/content/sec_bhavdata_full_${d}.csv
+"
+echo "Trying $url"
+if curl -f -sS "$url" -o "/tmp/bhav_${d}.csv"; then
+echo "Downloaded ${url}"
+found="$d"
+cp "/tmp/bhav_${d}.csv" "data/prices/bhav_${d}.csv"
+cp "/tmp/bhav_${d}.csv" "data/prices/bhav_latest.csv"
+break
+fi
+done
+if [ -z "$found" ]; then
+echo "Could not find a bhavcopy in the last 5 days." >&2
+exit 1
+fi
+git config user.name "${GITHUB_ACTOR}"
+git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+if ! git diff --quiet; then
+git add -A
+git commit -m "chore(prices): mirror bhavcopy ${found}"
+git push
+else
+echo "No price updates to commit."
+fi
