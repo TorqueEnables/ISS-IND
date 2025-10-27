@@ -6,14 +6,18 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: prices-backfill
+  cancel-in-progress: true
+
 jobs:
   backfill:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Backfill last 120 calendar days and rebuild 90d
-        shell: bash
+      - name: Backfill last 150 calendar days (daily bhav files)
         run: |
           set -euo pipefail
           mkdir -p data/prices
@@ -21,16 +25,19 @@ jobs:
 
           ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari'
 
-          # 1) Download per-day files using the CORRECT numeric pattern: DDMMYYYY
-          # Try last 120 calendar days; skip ones we already have.
-          for i in $(seq 0 120); do
-            d_num=$(date -u -d "$i day ago" +'%d%m%Y')       # e.g., 24102025
+          # Try to download the last 150 calendar days; skip files we already have.
+          for i in $(seq 0 150); do
+            d_num=$(date -u -d "$i day ago" +'%d%m%Y') || d_num=$(date -u -v-"$i"d +'%d%m%Y')
             url="https://archives.nseindia.com/products/content/sec_bhavdata_full_${d_num}.csv"
             out="bhav_${d_num}.csv"
-            [[ -s "$out" ]] && continue
+
+            if [ -s "$out" ]; then
+              echo "Already have $out"
+              continue
+            fi
+
             echo "Try $url -> $out"
-            if curl -fL --retry 5 --retry-delay 2 --retry-connrefused -A "$ua" -o tmp.csv "$url" 2>/dev/null; then
-              # Validate CSV header (must start with SYMBOL,DATE1,...)
+            if curl -fL --retry 5 --retry-delay 2 --retry-connrefused -A "$ua" -o tmp.csv "$url" ; then
               if head -n1 tmp.csv | grep -q '^SYMBOL'; then
                 mv tmp.csv "$out"
                 echo "Saved $out"
@@ -39,108 +46,118 @@ jobs:
                 rm -f tmp.csv
               fi
             else
-              echo "Not available (maybe holiday/weekend): $url"
+              echo "Not available (holiday/weekend/late post): $url"
             fi
           done
 
-          # 2) Assemble the latest 90 trading days into a single CSV (chronological, one header).
-          mapfile -t LASTN < <(
-            ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv 2>/dev/null \
-            | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\3-\2-\1 & #' \
-            | sort -r \
-            | awk '{print $2}' \
-            | head -n 90 \
-            | tac
-          )
-          [[ ${#LASTN[@]} -gt 0 ]] || { echo "No daily bhav_*.csv files present"; exit 1; }
-
-          tmp_out=$(mktemp)
-          { head -n1 "${LASTN[0]}"; for f in "${LASTN[@]}"; do tail -n +2 "$f"; done; } > "$tmp_out"
-          mv "$tmp_out" bhav_latest_90d.csv
-
-          # Also expose newest daily for Sheets
-          cp -f "${LASTN[-1]}" bhav_latest.csv
-
-          echo "Built bhav_latest_90d.csv from ${#LASTN[@]} days:"
-          for f in "${LASTN[@]}"; do echo " - $f"; done
-
-      - name: Split 90-day into 3 EQ-only shards (robust CSV)
-        shell: bash
+      - name: Build 90-day CSV (chronological, single header) + latest
         run: |
           set -euo pipefail
           cd data/prices
 
-          # Recompute LASTN (oldest->newest) if not in scope
           mapfile -t LASTN < <(
             ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv 2>/dev/null \
             | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\3-\2-\1 & #' \
             | sort -r | awk '{print $2}' | head -n 90 | tac
           )
-          [[ ${#LASTN[@]} -gt 0 ]] || { echo "No daily files to split"; exit 1; }
+
+          if [ ${#LASTN[@]} -eq 0 ]; then
+            echo "No daily files to stitch"; exit 1
+          fi
+
+          tmp_out=$(mktemp)
+          head -n1 "${LASTN[0]}" > "$tmp_out"
+          for f in "${LASTN[@]}"; do
+            tail -n +2 "$f" >> "$tmp_out"
+          done
+          mv "$tmp_out" bhav_latest_90d.csv
+
+          cp -f "${LASTN[-1]}" bhav_latest.csv
+          echo "Built bhav_latest_90d.csv from ${#LASTN[@]} days; newest=${LASTN[-1]}"
+
+      - name: Split 90-day into 3 EQ-only shards (robust CSV)
+        run: |
+          set -euo pipefail
+          cd data/prices
 
           python3 - <<'PY'
-          import csv, glob, sys
-          from pathlib import Path
+import csv, re, sys
+from pathlib import Path
 
-          # Pick up the same 90-day list the shell computed
-          import subprocess, shlex
-          cmd = r"ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\\3-\\2-\\1 & #' | sort -r | awk '{print $2}' | head -n 90 | tac"
-          LASTN = subprocess.check_output(cmd, shell=True, text=True).strip().splitlines()
-          if not LASTN: 
-            print("No files", file=sys.stderr); sys.exit(1)
+root = Path(".")
+pat = re.compile(r"bhav_(\d{2})(\d{2})(\d{4})\.csv$")
+files = []
+for p in root.glob("bhav_*.csv"):
+    m = pat.fullmatch(p.name)
+    if m:
+        dd, mm, yyyy = m.groups()
+        files.append((int(yyyy), int(mm), int(dd), p))
 
-          # Read, filter SERIES=='EQ' (tolerate quotes/spaces), cap to first 15 cols
-          rows = []
-          hdr = None
-            for f in LASTN:
-              with open(f, newline='', encoding='utf-8') as fh:
-                r = csv.reader(fh)
-                h = next(r, None)
-              if h is None: 
+# newest -> oldest, keep last 90, then oldest -> newest
+files.sort(reverse=True)
+files = [p for _,_,_,p in files[:90]][::-1]
+if not files:
+    print("No daily files present", file=sys.stderr); sys.exit(1)
+
+DESIRED_COLS = 15
+
+def norm(row):
+    row = list(row)
+    if len(row) < DESIRED_COLS:
+        row += [""] * (DESIRED_COLS - len(row))
+    else:
+        row = row[:DESIRED_COLS]
+    return row
+
+rows = []
+header = None
+
+for idx, f in enumerate(files):
+    with f.open("r", encoding="utf-8", errors="replace", newline="") as fh:
+        rdr = csv.reader(fh)
+        h = next(rdr, None)
+        if h is None:
             continue
-        if hdr is None:
-            hdr = h[:15] + [""]*(15-len(h))
-        for row in r:
-            if not row: 
+        if header is None:
+            header = norm(h)
+        for rec in rdr:
+            if not rec:
                 continue
-            # Guard: some rows could be short; pad
-            row = row[:15] + [""]*(15-len(row))
-            series = row[1].strip().strip('"').upper()
+            rec = norm(rec)
+            series = rec[1].strip().strip('"').upper()  # column 2 is SERIES
             if series == "EQ":
-                rows.append(row)
+                rows.append(rec)
 
-# Split rows into 3 roughly equal parts
 n = len(rows)
+# Split rows into 3 roughly equal parts
 p1 = rows[: n//3]
 p2 = rows[n//3 : 2*n//3]
 p3 = rows[2*n//3 : ]
 
-def write_part(name, part, include_header):
-    with open(name, "w", newline='', encoding='utf-8') as out:
+def write_part(path, part, include_header):
+    with open(path, "w", encoding="utf-8", newline="") as out:
         w = csv.writer(out)
         if include_header:
-            w.writerow(hdr)
-        for r in part:
-            w.writerow(r)
+            w.writerow(header if header is not None else [""] * DESIRED_COLS)
+        w.writerows(part)
 
 write_part("bhav_latest_90d_p1.csv", p1, True)
 write_part("bhav_latest_90d_p2.csv", p2, False)
 write_part("bhav_latest_90d_p3.csv", p3, False)
 
-print(f"EQ-only rows: {n} → p1={len(p1)}, p2={len(p2)}, p3={len(p3)}")
+print(f"EQ-only shards: p1={len(p1)} p2={len(p2)} p3={len(p3)}", file=sys.stderr)
 PY
 
+          wc -l bhav_latest_90d.csv bhav_latest.csv bhav_latest_90d_p*.csv || true
 
-
-      - name: Commit changes
-        shell: bash
+      - name: Commit changes (if any)
         run: |
           set -e
-          if [[ -n "$(git status --porcelain)" ]]; then
+          if [ -n "$(git status --porcelain)" ]; then
             git config user.name  "prices-bot"
             git config user.email "prices-bot@users.noreply.github.com"
             git add -A
-            git commit -m "backfill(prices): rebuild 90d + latest $(date -u +%F)"
+            git commit -m "backfill: bhav daily + 90d + EQ shards $(date -u +%F)"
             git push
           else
             echo "No changes to commit."
