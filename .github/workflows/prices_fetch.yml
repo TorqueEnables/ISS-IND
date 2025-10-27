@@ -3,7 +3,7 @@ name: Prices Mirror (NSE Bhavcopy)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 14 * * 1-5'   # ~19:45 IST, Mon-Fri
+    - cron: '15 14 * * 1-5'  # ~19:45 IST Mon–Fri
 
 permissions:
   contents: write
@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch recent bhavcopy files (last 10 days)
+      - name: Fetch recent bhavcopy files (last 10 calendar days)
         run: |
           set -euo pipefail
           mkdir -p data/prices
@@ -28,7 +28,7 @@ jobs:
           ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari'
 
           for i in $(seq 0 10); do
-            d_num=$(date -u -d "$i day ago" +'%d%m%Y') || d_num=$(date -u -v-"$i"d +'%d%m%Y')
+            d_num=$(date -u -d "$i day ago" +'%d%m%Y')
             url="https://archives.nseindia.com/products/content/sec_bhavdata_full_${d_num}.csv"
             out="bhav_${d_num}.csv"
 
@@ -38,7 +38,7 @@ jobs:
             fi
 
             echo "Try $url -> $out"
-            if curl -fL --retry 5 --retry-delay 2 --retry-connrefused -A "$ua" -o tmp.csv "$url" ; then
+            if curl -fL --retry 5 --retry-delay 2 --retry-connrefused -A "$ua" -o tmp.csv "$url"; then
               if head -n1 tmp.csv | grep -q '^SYMBOL'; then
                 mv tmp.csv "$out"
                 echo "Saved $out"
@@ -98,10 +98,10 @@ for p in root.glob("bhav_*.csv"):
 files.sort(reverse=True)
 files = [p for _,_,_,p in files[:90]][::-1]
 if not files:
-    print("No daily files present", file=sys.stderr); sys.exit(1)
+    print("No daily files present", file=sys.stderr)
+    sys.exit(1)
 
 DESIRED_COLS = 15
-
 def norm(row):
     row = list(row)
     if len(row) < DESIRED_COLS:
@@ -113,7 +113,7 @@ def norm(row):
 rows = []
 header = None
 
-for idx, f in enumerate(files):
+for f in files:
     with f.open("r", encoding="utf-8", errors="replace", newline="") as fh:
         rdr = csv.reader(fh)
         h = next(rdr, None)
