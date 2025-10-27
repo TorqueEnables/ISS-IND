@@ -3,7 +3,7 @@ name: Prices Mirror (NSE Bhavcopy)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 14 * * 1-5'   # ~7:45 PM IST on weekdays
+    - cron: '15 14 * * 1-5'   # 19:45 IST Mon-Fri
 
 permissions:
   contents: write
@@ -25,31 +25,43 @@ jobs:
           mkdir -p data/prices
           cd data/prices
 
-          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari'
 
+          # 1) Fetch last 10 calendar days using the numeric pattern
           for i in $(seq 0 10); do
-            d_arch=$(date -u -d "$i day ago" +'%d%b%Y')
-            d_file=$(date -u -d "$i day ago" +'%d%m%Y')
-            url="https://archives.nseindia.com/products/content/sec_bhavdata_full_${d_arch}.csv"
-            out="bhav_${d_file}.csv"
+            d_num=$(date -u -d "$i day ago" +'%d%m%Y')
+            url="https://archives.nseindia.com/products/content/sec_bhavdata_full_${d_num}.csv"
+            out="bhav_${d_num}.csv"
             [[ -s "$out" ]] && continue
             echo "Try $url -> $out"
             if curl -fL --retry 5 --retry-delay 2 --retry-connrefused -A "$ua" -o tmp.csv "$url" 2>/dev/null; then
-              if head -n1 tmp.csv | grep -q '^SYMBOL'; then mv tmp.csv "$out"; else rm -f tmp.csv; fi
+              if head -n1 tmp.csv | grep -q '^SYMBOL'; then
+                mv tmp.csv "$out"
+                echo "Saved $out"
+              else
+                echo "Header invalid for $out; skipping"
+                rm -f tmp.csv
+              fi
+            else
+              echo "Not available (holiday/weekend/late post): $url"
             fi
           done
 
+          # 2) Rebuild 90d
           mapfile -t LASTN < <(
             ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv 2>/dev/null \
             | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\3-\2-\1 & #' \
             | sort -r | awk '{print $2}' | head -n 90 | tac
           )
-          [[ ${#LASTN[@]} -gt 0 ]] || { echo "No daily files"; exit 1; }
+          [[ ${#LASTN[@]} -gt 0 ]] || { echo "No daily files to stitch"; exit 1; }
 
           tmp_out=$(mktemp)
           { head -n1 "${LASTN[0]}"; for f in "${LASTN[@]}"; do tail -n +2 "$f"; done; } > "$tmp_out"
           mv "$tmp_out" bhav_latest_90d.csv
+
           cp -f "${LASTN[-1]}" bhav_latest.csv
+
+          echo "Rebuilt bhav_latest_90d.csv with ${#LASTN[@]} days; newest = ${LASTN[-1]}"
 
       - name: Commit changes
         shell: bash
@@ -59,7 +71,7 @@ jobs:
             git config user.name  "prices-bot"
             git config user.email "prices-bot@users.noreply.github.com"
             git add -A
-            git commit -m "chore(prices): mirror bhavcopy $(date -u +%F)"
+            git commit -m "chore(prices): mirror bhav $(date -u +%F)"
             git push
           else
             echo "No changes to commit."
