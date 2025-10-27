@@ -64,6 +64,74 @@ jobs:
           echo "Built bhav_latest_90d.csv from ${#LASTN[@]} days:"
           for f in "${LASTN[@]}"; do echo " - $f"; done
 
+      - name: Split 90-day into 3 EQ-only shards (robust CSV)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd data/prices
+
+          # Recompute LASTN (oldest->newest) if not in scope
+          mapfile -t LASTN < <(
+            ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv 2>/dev/null \
+            | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\3-\2-\1 & #' \
+            | sort -r | awk '{print $2}' | head -n 90 | tac
+          )
+          [[ ${#LASTN[@]} -gt 0 ]] || { echo "No daily files to split"; exit 1; }
+
+          python3 - <<'PY'
+          import csv, glob, sys
+          from pathlib import Path
+
+          # Pick up the same 90-day list the shell computed
+          import subprocess, shlex
+          cmd = r"ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\\3-\\2-\\1 & #' | sort -r | awk '{print $2}' | head -n 90 | tac"
+          LASTN = subprocess.check_output(cmd, shell=True, text=True).strip().splitlines()
+          if not LASTN: 
+            print("No files", file=sys.stderr); sys.exit(1)
+
+          # Read, filter SERIES=='EQ' (tolerate quotes/spaces), cap to first 15 cols
+          rows = []
+          hdr = None
+            for f in LASTN:
+              with open(f, newline='', encoding='utf-8') as fh:
+                r = csv.reader(fh)
+                h = next(r, None)
+              if h is None: 
+            continue
+        if hdr is None:
+            hdr = h[:15] + [""]*(15-len(h))
+        for row in r:
+            if not row: 
+                continue
+            # Guard: some rows could be short; pad
+            row = row[:15] + [""]*(15-len(row))
+            series = row[1].strip().strip('"').upper()
+            if series == "EQ":
+                rows.append(row)
+
+# Split rows into 3 roughly equal parts
+n = len(rows)
+p1 = rows[: n//3]
+p2 = rows[n//3 : 2*n//3]
+p3 = rows[2*n//3 : ]
+
+def write_part(name, part, include_header):
+    with open(name, "w", newline='', encoding='utf-8') as out:
+        w = csv.writer(out)
+        if include_header:
+            w.writerow(hdr)
+        for r in part:
+            w.writerow(r)
+
+write_part("bhav_latest_90d_p1.csv", p1, True)
+write_part("bhav_latest_90d_p2.csv", p2, False)
+write_part("bhav_latest_90d_p3.csv", p3, False)
+
+print(f"EQ-only rows: {n} → p1={len(p1)}, p2={len(p2)}, p3={len(p3)}")
+PY
+
+
+
       - name: Commit changes
         shell: bash
         run: |
