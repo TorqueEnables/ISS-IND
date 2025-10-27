@@ -78,24 +78,24 @@ jobs:
           [[ ${#LASTN[@]} -gt 0 ]] || { echo "No daily files to split"; exit 1; }
 
           python3 - <<'PY'
-import csv, glob, sys
-from pathlib import Path
+          import csv, glob, sys
+          from pathlib import Path
 
-# Pick up the same 90-day list the shell computed
-import subprocess, shlex
-cmd = r"ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\\3-\\2-\\1 & #' | sort -r | awk '{print $2}' | head -n 90 | tac"
-LASTN = subprocess.check_output(cmd, shell=True, text=True).strip().splitlines()
-if not LASTN: 
-    print("No files", file=sys.stderr); sys.exit(1)
+          # Pick up the same 90-day list the shell computed
+          import subprocess, shlex
+          cmd = r"ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\\3-\\2-\\1 & #' | sort -r | awk '{print $2}' | head -n 90 | tac"
+          LASTN = subprocess.check_output(cmd, shell=True, text=True).strip().splitlines()
+          if not LASTN: 
+            print("No files", file=sys.stderr); sys.exit(1)
 
-# Read, filter SERIES=='EQ' (tolerate quotes/spaces), cap to first 15 cols
-rows = []
-hdr = None
-for f in LASTN:
-    with open(f, newline='', encoding='utf-8') as fh:
-        r = csv.reader(fh)
-        h = next(r, None)
-        if h is None: 
+          # Read, filter SERIES=='EQ' (tolerate quotes/spaces), cap to first 15 cols
+          rows = []
+          hdr = None
+            for f in LASTN:
+              with open(f, newline='', encoding='utf-8') as fh:
+                r = csv.reader(fh)
+                h = next(r, None)
+              if h is None: 
             continue
         if hdr is None:
             hdr = h[:15] + [""]*(15-len(h))
