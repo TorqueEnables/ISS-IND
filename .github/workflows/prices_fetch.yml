@@ -62,6 +62,38 @@ jobs:
           cp -f "${LASTN[-1]}" bhav_latest.csv
 
           echo "Rebuilt bhav_latest_90d.csv with ${#LASTN[@]} days; newest = ${LASTN[-1]}"
+          
+      - name: Split 90-day file into 3 shards (30d each)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd data/prices
+
+          # Recreate LASTN (oldest -> newest) if not already in scope
+          mapfile -t LASTN < <(
+            ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv 2>/dev/null \
+            | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\3-\2-\1 & #' \
+            | sort -r | awk '{print $2}' | head -n 90 | tac
+          )
+          [[ ${#LASTN[@]} -gt 0 ]] || { echo "No daily files to split"; exit 1; }
+
+          # Start fresh
+          rm -f bhav_latest_90d_p1.csv bhav_latest_90d_p2.csv bhav_latest_90d_p3.csv
+
+          # p1 keeps the header; p2 and p3 are headerless so Sheets can stack them cleanly
+          head -n 1 "${LASTN[0]}" > bhav_latest_90d_p1.csv
+          : > bhav_latest_90d_p2.csv
+          : > bhav_latest_90d_p3.csv
+
+          for idx in "${!LASTN[@]}"; do
+            f="${LASTN[$idx]}"
+            if   (( idx < 30 )); then tail -n +2 "$f" >> bhav_latest_90d_p1.csv
+            elif (( idx < 60 )); then tail -n +2 "$f" >> bhav_latest_90d_p2.csv
+            else                     tail -n +2 "$f" >> bhav_latest_90d_p3.csv
+            fi
+          done
+
+          echo "Shards written: p1=$(wc -l < bhav_latest_90d_p1.csv) rows, p2=$(wc -l < bhav_latest_90d_p2.csv), p3=$(wc -l < bhav_latest_90d_p3.csv)"
 
       - name: Commit changes
         shell: bash
