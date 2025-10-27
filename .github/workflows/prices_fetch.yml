@@ -3,16 +3,14 @@ name: Prices Mirror (NSE Bhavcopy)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '5 15 * * 1-5'
-    - cron: '5 16 * * 1-5'
-    - cron: '5 17 * * 1-5'
+    - cron: '15 14 * * 1-5'   # ~7:45 PM IST on weekdays
 
 permissions:
   contents: write
 
 concurrency:
   group: prices-fetch
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   fetch-and-commit:
@@ -20,31 +18,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch latest available bhavcopy (tries last 5 calendar days)
-        run: bash scripts/fetch_prices.sh
-
-      - name: Show fetched files (debug)
+      - name: Fetch recent bhavcopy and rebuild 90d
+        shell: bash
         run: |
-          echo "::group::Listing data/prices"
-          ls -la data/prices || true
-          echo "::endgroup::"
+          set -euo pipefail
+          mkdir -p data/prices
+          cd data/prices
 
-      - name: Build 90-day history CSV
-        run: bash scripts/build_prices_hist.sh
+          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
 
-      - name: Commit changes (if any)
+          for i in $(seq 0 10); do
+            d_arch=$(date -u -d "$i day ago" +'%d%b%Y')
+            d_file=$(date -u -d "$i day ago" +'%d%m%Y')
+            url="https://archives.nseindia.com/products/content/sec_bhavdata_full_${d_arch}.csv"
+            out="bhav_${d_file}.csv"
+            [[ -s "$out" ]] && continue
+            echo "Try $url -> $out"
+            if curl -fL --retry 5 --retry-delay 2 --retry-connrefused -A "$ua" -o tmp.csv "$url" 2>/dev/null; then
+              if head -n1 tmp.csv | grep -q '^SYMBOL'; then mv tmp.csv "$out"; else rm -f tmp.csv; fi
+            fi
+          done
+
+          mapfile -t LASTN < <(
+            ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv 2>/dev/null \
+            | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\3-\2-\1 & #' \
+            | sort -r | awk '{print $2}' | head -n 90 | tac
+          )
+          [[ ${#LASTN[@]} -gt 0 ]] || { echo "No daily files"; exit 1; }
+
+          tmp_out=$(mktemp)
+          { head -n1 "${LASTN[0]}"; for f in "${LASTN[@]}"; do tail -n +2 "$f"; done; } > "$tmp_out"
+          mv "$tmp_out" bhav_latest_90d.csv
+          cp -f "${LASTN[-1]}" bhav_latest.csv
+
+      - name: Commit changes
+        shell: bash
         run: |
           set -e
-          git config user.name "${GITHUB_ACTOR}"
-          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-
-          # Stage everything first (includes untracked files)
-          git add -A
-
-          # Commit only if there is something staged
-          if git diff --cached --quiet; then
-            echo "No price updates to commit."
-          else
-            git commit -m "chore(prices): mirror bhavcopy via workflow $GITHUB_RUN_ID"
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git config user.name  "prices-bot"
+            git config user.email "prices-bot@users.noreply.github.com"
+            git add -A
+            git commit -m "chore(prices): mirror bhavcopy $(date -u +%F)"
             git push
+          else
+            echo "No changes to commit."
           fi
