@@ -13,151 +13,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  fetch-and-commit:
+  mirror:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Fetch recent bhavcopy files (last 10 calendar days)
-        run: |
-          set -euo pipefail
-          mkdir -p data/prices
-          cd data/prices
-
-          ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari'
-
-          for i in $(seq 0 10); do
-            d_num=$(date -u -d "$i day ago" +'%d%m%Y')
-            url="https://archives.nseindia.com/products/content/sec_bhavdata_full_${d_num}.csv"
-            out="bhav_${d_num}.csv"
-
-            if [ -s "$out" ]; then
-              echo "Already have $out"
-              continue
-            fi
-
-            echo "Try $url -> $out"
-            if curl -fL --retry 5 --retry-delay 2 --retry-connrefused -A "$ua" -o tmp.csv "$url"; then
-              if head -n1 tmp.csv | grep -q '^SYMBOL'; then
-                mv tmp.csv "$out"
-                echo "Saved $out"
-              else
-                echo "Bad header for $out; skipping"
-                rm -f tmp.csv
-              fi
-            else
-              echo "Not available (holiday/late post): $url"
-            fi
-          done
-
-      - name: Rebuild 90-day CSVs (chronological, single header)
-        run: |
-          set -euo pipefail
-          cd data/prices
-
-          mapfile -t LASTN < <(
-            ls -1 bhav_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].csv 2>/dev/null \
-            | sed -E 's#.*bhav_([0-9]{2})([0-9]{2})([0-9]{4}).csv#\3-\2-\1 & #' \
-            | sort -r | awk '{print $2}' | head -n 90 | tac
-          )
-
-          if [ ${#LASTN[@]} -eq 0 ]; then
-            echo "No daily files to stitch"
-            exit 1
-          fi
-
-          tmp_out=$(mktemp)
-          head -n1 "${LASTN[0]}" > "$tmp_out"
-          for f in "${LASTN[@]}"; do
-            tail -n +2 "$f" >> "$tmp_out"
-          done
-          mv "$tmp_out" bhav_latest_90d.csv
-
-          cp -f "${LASTN[-1]}" bhav_latest.csv
-          echo "Built bhav_latest_90d.csv from ${#LASTN[@]} days; newest=${LASTN[-1]}"
-
-      - name: Split 90-day into 3 EQ-only shards (robust CSV)
-        run: |
-          set -euo pipefail
-          cd data/prices
-
-          python3 - <<'PY'
-import csv, re, sys
-from pathlib import Path
-
-root = Path(".")
-pat = re.compile(r"bhav_(\d{2})(\d{2})(\d{4})\.csv$")
-files = []
-for p in root.glob("bhav_*.csv"):
-    m = pat.fullmatch(p.name)
-    if m:
-        dd, mm, yyyy = m.groups()
-        files.append((int(yyyy), int(mm), int(dd), p))
-
-files.sort(reverse=True)
-files = [p for _,_,_,p in files[:90]][::-1]
-if not files:
-    print("No daily files present", file=sys.stderr)
-    sys.exit(1)
-
-DESIRED_COLS = 15
-def norm(row):
-    row = list(row)
-    if len(row) < DESIRED_COLS:
-        row += [""] * (DESIRED_COLS - len(row))
-    else:
-        row = row[:DESIRED_COLS]
-    return row
-
-rows = []
-header = None
-
-for f in files:
-    with f.open("r", encoding="utf-8", errors="replace", newline="") as fh:
-        rdr = csv.reader(fh)
-        h = next(rdr, None)
-        if h is None:
-            continue
-        if header is None:
-            header = norm(h)
-        for rec in rdr:
-            if not rec:
-                continue
-            rec = norm(rec)
-            series = rec[1].strip().strip('"').upper()
-            if series == "EQ":
-                rows.append(rec)
-
-n = len(rows)
-p1 = rows[: n//3]
-p2 = rows[n//3 : 2*n//3]
-p3 = rows[2*n//3 : ]
-
-def write_part(path, part, include_header):
-    with open(path, "w", encoding="utf-8", newline="") as out:
-        w = csv.writer(out)
-        if include_header:
-            w.writerow(header if header is not None else [""] * DESIRED_COLS)
-        w.writerows(part)
-
-write_part("bhav_latest_90d_p1.csv", p1, True)
-write_part("bhav_latest_90d_p2.csv", p2, False)
-write_part("bhav_latest_90d_p3.csv", p3, False)
-
-print(f"EQ-only shards: p1={len(p1)} p2={len(p2)} p3={len(p3)}", file=sys.stderr)
-PY
-
-          wc -l bhav_latest_90d_p*.csv || true
-
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build latest daily, 90d, and EQ shards
+        run: python tools/build_prices.py --days 10
       - name: Commit changes (if any)
         run: |
-          set -e
           if [ -n "$(git status --porcelain)" ]; then
             git config user.name  "prices-bot"
             git config user.email "prices-bot@users.noreply.github.com"
             git add -A
-            git commit -m "chore(prices): mirror + rebuild $(date -u +%F)"
+            git commit -m "mirror: daily+90d+EQ shards $(date -u +%F)"
             git push
           else
             echo "No changes to commit."
