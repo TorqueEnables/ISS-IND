@@ -1,0 +1,40 @@
+name: Fetch NSE EOD data
+
+on:
+  schedule:
+    # 14:35 UTC ≈ 20:05 IST daily (tweak if you like)
+    - cron: "35 14 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas requests pytz
+
+      - name: Run fetcher
+        run: |
+          python scripts/fetch_market_data.py
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "data: update EOD sources [skip ci]"
+            git push
+          else
+            echo "No changes to commit."
+          fi
