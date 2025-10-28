@@ -1,6 +1,6 @@
 {
   "ok": false,
-  "when_ist": "2025-10-28T15:06:58.506495+05:30",
+  "when_ist": "2025-10-28T16:36:51.738042+05:30",
   "steps": {
     "deliverables": {
       "ok": false,
@@ -59,12 +59,6 @@
       "https://www.nseindia.com/api/corporates/block-deals?index=equities",
       "https://www.nseindia.com/api/corporates-pit?index=block-deals"
     ],
-    "bhav_tried": [
-      "https://archives.nseindia.com/products/content/sec_bhavdata_full_27102025.csv",
-      "https://archives.nseindia.com/content/historical/EQUITIES/2025/OCT/cm27OCT2025bhav.csv.zip",
-      "https://www.nseindia.com/content/historical/EQUITIES/2025/OCT/cm27OCT2025bhav.csv.zip",
-      "https://www1.nseindia.com/content/historical/EQUITIES/2025/OCT/cm27OCT2025bhav.csv.zip"
-    ],
-    "bhav_seed_error": "HTTPSConnectionPool(host='www1.nseindia.com', port=443): Max retries exceeded with url: /content/historical/EQUITIES/2025/OCT/cm27OCT2025bhav.csv.zip (Caused by SSLError(SSLError(1, '[SSL: TLSV1_ALERT_INTERNAL_ERROR] tlsv1 alert internal error (_ssl.c:1016)')))"
+    "bhav_seed_error": "name 'load_bhav_latest_local_or_remote' is not defined"
   }
 }
