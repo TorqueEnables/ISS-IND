@@ -2,7 +2,7 @@ name: Fetch NSE EOD data (robust)
 
 on:
   schedule:
-    # 17:35 UTC ≈ 23:05 IST daily (safer: MTO + corporates usually live)
+    # 17:35 UTC ≈ 23:05 IST daily (after NSE updates)
     - cron: "35 17 * * *"
   workflow_dispatch: {}
 
@@ -32,24 +32,29 @@ jobs:
 
       - name: Run fetcher (record warnings; never fail)
         env:
-          # Fallback URL if local bhav_latest.csv is missing
           GH_RAW_BHAV_URL: "https://raw.githubusercontent.com/TorqueEnables/ISS-IND/main/data/prices/bhav_latest.csv"
         run: |
           python scripts/fetch_market_data.py || true
+
+      - name: Show workspace tree (debug)
+        run: |
+          echo "::group::Tree"
+          ls -lah
+          echo "----- data/"
+          ls -lah data || true
+          echo "----- data/prices/"
+          ls -lah data/prices || true
+          echo "::endgroup::"
 
       - name: Auto-commit any changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "data: update EOD sources [robust]"
           file_pattern: |
-            data/*.csv
-            data/*.json
-            data/prices/bhav_hist.csv
+            data/**
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
 
-      - name: Show status
+      - name: Show status file
         run: |
-          if [ -f data/fetch_status.json ]; then
-            cat data/fetch_status.json
-          else
-            echo '{"ok": false, "note": "status file missing"}'
-          fi
+          cat data/fetch_status.json || echo '{"ok": false, "note": "status file missing"}'
