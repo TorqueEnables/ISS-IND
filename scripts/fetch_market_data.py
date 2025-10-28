@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ISS-IND robust EOD fetcher (cold-start + indicators)
+ISS-IND robust EOD fetcher (final hardened, multi-source archives)
 
 Outputs (atomic writes under data/):
   - deliverables_latest.csv, deliverables_hist.csv
   - bulk_deals_latest.csv, block_deals_latest.csv
-  - prices/bhav_hist.csv     (seeded from NSE archives if empty)
+  - prices/bhav_hist.csv     (cold-seeded from NSE archives if empty)
   - highlow_52w.csv
   - tech_latest.csv          (latest-day technical indicators per symbol)
-  - fetch_status.json        (diagnostics; workflow never fails)
+  - fetch_status.json        (diagnostics incl. URLs tried; workflow never fails)
 
 Zero-budget. Works even when some endpoints are flaky; last-good semantics.
 """
 
 from __future__ import annotations
 import os, sys, io, json, time, zipfile
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -95,13 +95,15 @@ def get_session() -> requests.Session:
     s = requests.Session()
     s.headers.update({
         "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                       "KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                       "KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"),
+        "Accept": "*/*",
         "Accept-Language": "en-US,en;q=0.7",
         "Connection": "keep-alive",
     })
     try:
+        # warm cookies and referers NSE likes
         s.get("https://www.nseindia.com", timeout=20)
+        s.get("https://www.nseindia.com/market-data", timeout=20)
         s.get("https://www.nseindia.com/companies-listing/corporate-filings-bulk-deals", timeout=20)
         s.get("https://www.nseindia.com/companies-listing/corporate-filings-block-deals", timeout=20)
     except Exception:
@@ -128,7 +130,6 @@ def parse_mto_text(txt: str) -> pd.DataFrame:
         parts = (parts + [""] * len(header))[:len(header)]
         rows.append(parts)
     df = pd.DataFrame(rows, columns=header)
-
     colmap = {}
     for c in df.columns:
         cu = c.upper()
@@ -139,12 +140,10 @@ def parse_mto_text(txt: str) -> pd.DataFrame:
         elif "DELIV" in cu and "QTY" in cu: colmap[c]="Deliverable_Qty"
         elif ("DELIV" in cu and "%") or "PER" in cu: colmap[c]="Delivery_Pct"
     df = df.rename(columns=colmap)
-
     keep = ["Date","Symbol","Series","Deliverable_Qty","Traded_Qty","Delivery_Pct"]
     for k in keep:
         if k not in df.columns: df[k] = None
     df = df[keep]
-
     df["Symbol"] = df["Symbol"].astype(str).str.upper().str.strip()
     df["Series"] = df["Series"].astype(str).str.upper().str.strip()
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True).dt.strftime("%Y-%m-%d")
@@ -156,24 +155,29 @@ def parse_mto_text(txt: str) -> pd.DataFrame:
 def try_mto_for_date(s: requests.Session, d: datetime) -> Optional[pd.DataFrame]:
     ddmmyyyy = d.strftime("%d%m%Y")
     urls = [
+        f"https://archives.nseindia.com/archives/equities/mto/MTO_{ddmmyyyy}.DAT",
         f"https://www.nseindia.com/archives/equities/mto/MTO_{ddmmyyyy}.DAT",
-        f"https://www.nseindia.com/archives/equities/mto/mto_{ddmmyyyy}.DAT",
-        f"https://www.nseindia.com/content/equities/mto/MTO_{ddmmyyyy}.DAT",
+        f"https://www1.nseindia.com/archives/equities/mto/MTO_{ddmmyyyy}.DAT",
     ]
     for u in urls:
         try:
-            r = s.get(u, timeout=30, headers={"Referer": "https://www.nseindia.com/market-data"})
+            r = s.get(u, timeout=40, headers={"Referer": "https://www.nseindia.com/market-data"})
             if r.status_code == 200 and "SYMBOL" in r.text.upper():
                 return parse_mto_text(r.text)
         except Exception:
             continue
     return None
 
-def fetch_deliverables_latest(s: requests.Session) -> Optional[pd.DataFrame]:
+def fetch_deliverables_latest(s: requests.Session, status_urls: Dict[str, Any]) -> Optional[pd.DataFrame]:
     for dt in [now_ist()] + previous_business_days(6):
         if is_weekend(dt): continue
+        tried = []
+        ddmmyyyy = dt.strftime("%d%m%Y")
+        for base in ("archives.nseindia.com","www.nseindia.com","www1.nseindia.com"):
+            tried.append(f"https://{base}/archives/equities/mto/MTO_{ddmmyyyy}.DAT")
+        status_urls.setdefault("mto_tried", []).extend(tried)
         try:
-            df = backoff(try_mto_for_date, tries=3, base=2, s=s, d=dt)
+            df = backoff(lambda s=s, d=dt: try_mto_for_date(s, d), tries=3, base=2)
             if df is not None and not df.empty:
                 return df
         except Exception:
@@ -181,7 +185,7 @@ def fetch_deliverables_latest(s: requests.Session) -> Optional[pd.DataFrame]:
     return None
 
 # ----------------- Corporates (Bulk/Block) -----------------
-def fetch_corporates(s: requests.Session, kind: str) -> Optional[pd.DataFrame]:
+def fetch_corporates(s: requests.Session, kind: str, status_urls: Dict[str, Any]) -> Optional[pd.DataFrame]:
     eps = {
         "bulk": [
             "https://www.nseindia.com/api/corporates-bulk-deals?index=equities",
@@ -204,6 +208,7 @@ def fetch_corporates(s: requests.Session, kind: str) -> Optional[pd.DataFrame]:
         "dealDate":"Date", "date":"Date",
     }
     for url in eps[kind]:
+        status_urls.setdefault(f"{kind}_tried", []).append(url)
         try:
             r = backoff(s.get, tries=4, base=2, url=url, timeout=30,
                         headers={"Accept":"application/json, text/plain, */*", "Referer": referer[kind]})
@@ -248,21 +253,7 @@ def fetch_corporates(s: requests.Session, kind: str) -> Optional[pd.DataFrame]:
     return None
 
 # ----------------- Bhav: load/seed/derive -----------------
-def load_bhav_latest_local_or_remote() -> Optional[pd.DataFrame]:
-    p = FILES["bhav_latest"]
-    if os.path.exists(p):
-        try: return pd.read_csv(p)
-        except Exception: pass
-    try:
-        r = requests.get(GH_RAW_BHAV_URL, timeout=30, headers={"User-Agent":"curl/8.0"})
-        if r.status_code == 200 and r.text:
-            return pd.read_csv(io.StringIO(r.text))
-    except Exception:
-        pass
-    return None
-
 def normalize_bhav(df: pd.DataFrame) -> pd.DataFrame:
-    # Map common NSE headers (bhav and V1 variants)
     canon = {
         "date":"Date","timestamp":"Date",
         "symbol":"Symbol","series":"Series",
@@ -279,44 +270,97 @@ def normalize_bhav(df: pd.DataFrame) -> pd.DataFrame:
     df = df[keep]
     df["Symbol"] = df["Symbol"].astype(str).str.upper().str.strip()
     df["Series"] = df["Series"].astype(str).str.upper().str.strip()
-    # Date may be DD-MMM-YYYY in archives; normalize
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.strftime("%Y-%m-%d")
     for c in ["Open","High","Low","Close","PrevClose","Volume","Turnover"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     return df.dropna(subset=["Date","Symbol","Close"])
 
-def fetch_bhav_archive_for_date(s: requests.Session, d: datetime) -> Optional[pd.DataFrame]:
-    # Old-style bhav archive: /content/historical/EQUITIES/YYYY/MON/cmDDMONYYYYbhav.csv.zip
-    MON = d.strftime("%b").upper()
-    DD = d.strftime("%d"); YYYY = d.strftime("%Y")
-    url = f"https://www.nseindia.com/content/historical/EQUITIES/{YYYY}/{MON}/cm{DD}{MON}{YYYY}bhav.csv.zip"
+def fetch_bhav_sec_full_csv_for_date(s: requests.Session, d: datetime) -> Optional[pd.DataFrame]:
+    # e.g., https://archives.nseindia.com/products/content/sec_bhavdata_full_28102025.csv
+    ddmmyyyy = d.strftime("%d%m%Y")
+    url = f"https://archives.nseindia.com/products/content/sec_bhavdata_full_{ddmmyyyy}.csv"
     r = s.get(url, timeout=40, headers={"Referer":"https://www.nseindia.com/market-data"})
-    if r.status_code != 200 or not r.content:
+    if r.status_code != 200 or not r.text:
         return None
-    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
-        # There should be one CSV inside
-        name = [n for n in zf.namelist() if n.lower().endswith(".csv")][0]
-        raw = zf.read(name).decode("utf-8", errors="ignore")
-    df = pd.read_csv(io.StringIO(raw))
-    # Typical archive headers: SYMBOL,SERIES,OPEN,HIGH,LOW,CLOSE,LAST,PREVCLOSE,TOTTRDQTY,TOTTRDVAL,TIMESTAMP,TOTALTRADES,ISIN
+    df = pd.read_csv(io.StringIO(r.text))
+    # Typical headers include: SYMBOL,SERIES,OPEN,HIGH,LOW,CLOSE,PREV. CLOSE,TTL_TRD_QNTY,TURNOVER_LACS,DATE1,...
+    # Normalize:
     canon = {
         "symbol":"Symbol","series":"Series","open":"Open","high":"High","low":"Low","close":"Close",
-        "prevclose":"PrevClose","tottrdqty":"Volume","tottrdval":"Turnover","timestamp":"Date"
+        "prev. close":"PrevClose","prev_close":"PrevClose","previousclose":"PrevClose",
+        "ttl_trd_qnty":"Volume","tottrdqty":"Volume","turnover_lacs":"Turnover","tottrdval":"Turnover",
+        "date1":"Date","timestamp":"Date"
     }
     df.columns = [canon.get(c.strip().lower(), c.strip()) for c in df.columns]
+    # Map Date could be DD-MMM-YYYY or DD-MON-YYYY in DATE1
+    if "Date" not in df.columns and "TIMESTAMP" in [c.upper() for c in df.columns]:
+        # rare path: fallback
+        df["Date"] = df[[c for c in df.columns if c.upper()=="TIMESTAMP"][0]]
     keep = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"]
     for k in keep:
         if k not in df.columns: df[k] = None
-    df = df[keep]
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=False).dt.strftime("%Y-%m-%d")
+    out = df[keep].copy()
+    out["Date"] = pd.to_datetime(out["Date"], errors="coerce").dt.strftime("%Y-%m-%d")
     for c in ["Open","High","Low","Close","PrevClose","Volume","Turnover"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-    df["Symbol"] = df["Symbol"].astype(str).str.upper().str.strip()
-    df["Series"] = df["Series"].astype(str).str.upper().str.strip()
-    return df.dropna(subset=["Date","Symbol","Close"])
+        out[c] = pd.to_numeric(out[c], errors="coerce")
+    out["Symbol"] = out["Symbol"].astype(str).str.upper().str.strip()
+    out["Series"] = out["Series"].astype(str).str.upper().str.strip()
+    return out.dropna(subset=["Date","Symbol","Close"])
 
-def cold_seed_bhav_hist_if_empty(s: requests.Session, min_days:int=90) -> int:
-    # If hist empty, walk back until we collect ~min_days trading days
+def fetch_bhav_archive_zip_for_date(s: requests.Session, d: datetime) -> Optional[pd.DataFrame]:
+    # e.g., https://archives.nseindia.com/content/historical/EQUITIES/2025/OCT/cm28OCT2025bhav.csv.zip
+    MON = d.strftime("%b").upper()
+    DD = d.strftime("%d"); YYYY = d.strftime("%Y")
+    urls = [
+        f"https://archives.nseindia.com/content/historical/EQUITIES/{YYYY}/{MON}/cm{DD}{MON}{YYYY}bhav.csv.zip",
+        f"https://www.nseindia.com/content/historical/EQUITIES/{YYYY}/{MON}/cm{DD}{MON}{YYYY}bhav.csv.zip",
+        f"https://www1.nseindia.com/content/historical/EQUITIES/{YYYY}/{MON}/cm{DD}{MON}{YYYY}bhav.csv.zip",
+    ]
+    for url in urls:
+        r = s.get(url, timeout=50, headers={"Referer":"https://www.nseindia.com/market-data"})
+        if r.status_code != 200 or not r.content:
+            continue
+        try:
+            with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+                name = [n for n in zf.namelist() if n.lower().endswith(".csv")][0]
+                raw = zf.read(name).decode("utf-8", errors="ignore")
+            df = pd.read_csv(io.StringIO(raw))
+        except Exception:
+            continue
+        canon = {
+            "symbol":"Symbol","series":"Series","open":"Open","high":"High","low":"Low","close":"Close",
+            "prevclose":"PrevClose","previousclose":"PrevClose","tottrdqty":"Volume","tottrdval":"Turnover","timestamp":"Date"
+        }
+        df.columns = [canon.get(c.strip().lower(), c.strip()) for c in df.columns]
+        keep = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"]
+        for k in keep:
+            if k not in df.columns: df[k] = None
+        out = df[keep].copy()
+        out["Date"] = pd.to_datetime(out["Date"], errors="coerce").dt.strftime("%Y-%m-%d")
+        for c in ["Open","High","Low","Close","PrevClose","Volume","Turnover"]:
+            out[c] = pd.to_numeric(out[c], errors="coerce")
+        out["Symbol"] = out["Symbol"].astype(str).str.upper().str.strip()
+        out["Series"] = out["Series"].astype(str).str.upper().str.strip()
+        out = out.dropna(subset=["Date","Symbol","Close"])
+        if not out.empty:
+            return out
+    return None
+
+def load_bhav_latest_local_or_remote() -> Optional[pd.DataFrame]:
+    p = FILES["bhav_latest"]
+    if os.path.exists(p):
+        try: return pd.read_csv(p)
+        except Exception: pass
+    try:
+        r = requests.get(GH_RAW_BHAV_URL, timeout=30, headers={"User-Agent":"curl/8.0"})
+        if r.status_code == 200 and r.text:
+            return pd.read_csv(io.StringIO(r.text))
+    except Exception:
+        pass
+    return None
+
+def cold_seed_bhav_hist_if_empty(s: requests.Session, status_urls: Dict[str, Any], min_days:int=90) -> int:
+    """If bhav_hist is empty, fetch ~min_days trading days by walking back using multi-source."""
     try:
         hist = pd.read_csv(FILES["bhav_hist"])
         current_rows = len(hist)
@@ -325,40 +369,50 @@ def cold_seed_bhav_hist_if_empty(s: requests.Session, min_days:int=90) -> int:
         current_rows = 0
     if current_rows > 0:
         return current_rows
+
     frames = []
-    days_checked = 0
-    for d in previous_business_days(min_days+20):
-        days_checked += 1
-        try:
-            df = fetch_bhav_archive_for_date(s, d)
-            if df is not None and not df.empty:
+    seen_dates = set()
+    for d in previous_business_days(min_days + 30):
+        # First: sec_bhavdata_full_*.csv (fast, no zip)
+        status_urls.setdefault("bhav_tried", []).append(
+            f"https://archives.nseindia.com/products/content/sec_bhavdata_full_{d.strftime('%d%m%Y')}.csv"
+        )
+        df = fetch_bhav_sec_full_csv_for_date(s, d)
+        if df is None or df.empty:
+            # Second: zipped cmDDMONYYYYbhav.csv.zip (archives → www → www1)
+            for base in ("archives.nseindia.com","www.nseindia.com","www1.nseindia.com"):
+                status_urls.setdefault("bhav_tried", []).append(
+                    f"https://{base}/content/historical/EQUITIES/{d.strftime('%Y')}/{d.strftime('%b').upper()}/cm{d.strftime('%d%b%Y').upper()}bhav.csv.zip"
+                )
+            df = fetch_bhav_archive_zip_for_date(s, d)
+
+        if df is not None and not df.empty:
+            day = df["Date"].iloc[0]
+            if day not in seen_dates:
                 frames.append(df)
-        except Exception:
-            continue
-        # gentle pause to be kind to servers
-        time.sleep(1.0)
-        if len({x["Date"].iloc[0] for x in frames if not x.empty}) >= min_days:
+                seen_dates.add(day)
+
+        time.sleep(0.8)  # be gentle
+        if len(seen_dates) >= min_days:
             break
+
     if frames:
         allb = pd.concat(frames, ignore_index=True)
-        # keep latest per (Date, Symbol)
         allb = allb.drop_duplicates(subset=["Date","Symbol"], keep="last")
-        allb["Date"] = pd.to_datetime(allb["Date"])
-        allb = allb.sort_values(["Date","Symbol"]).copy()
-        allb["Date"] = allb["Date"].dt.strftime("%Y-%m-%d")
+        allb["Date"] = pd.to_datetime(allb["Date"]).dt.strftime("%Y-%m-%d")
         atomic_write_df(allb, FILES["bhav_hist"])
         return len(allb)
     return 0
 
 # ----------------- Indicators -----------------
 def compute_indicators_and_write_latest(deliv_latest: Optional[pd.DataFrame]) -> dict:
-    # Load/normalize history
     try:
         hist = pd.read_csv(FILES["bhav_hist"])
     except Exception:
         hist = pd.DataFrame(columns=["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"])
+
     if hist.empty:
-        # still write headers
+        # still write headers so Sheets never break
         atomic_write_df(pd.DataFrame(columns=[
             "Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume",
             "Range","TR","ATR14","SMA10","SMA20","SMA50","BB_Mid","BB_Upper","BB_Lower",
@@ -376,7 +430,6 @@ def compute_indicators_and_write_latest(deliv_latest: Optional[pd.DataFrame]) ->
     tr3 = (df["Low"] - df["PrevClose"]).abs()
     df["TR"] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    # Grouped rolling
     g = df.groupby("Symbol", group_keys=False)
     df["ATR14"] = g["TR"].rolling(14, min_periods=14).mean().reset_index(level=0, drop=True)
     df["SMA10"] = g["Close"].rolling(10, min_periods=10).mean().reset_index(level=0, drop=True)
@@ -400,18 +453,16 @@ def compute_indicators_and_write_latest(deliv_latest: Optional[pd.DataFrame]) ->
     # 55-day high flags
     roll_hi55 = g["High"].rolling(55, min_periods=55).max().reset_index(level=0, drop=True)
     df["HI55"] = (df["High"] == roll_hi55)
-    # recent 5 sessions had a HI55
     df["HI55_Recent"] = g["HI55"].rolling(5, min_periods=1).max().reset_index(level=0, drop=True).astype(bool)
 
     # NR7: today's Range is the min of last 7 days
     rng7min = g["Range"].rolling(7, min_periods=7).min().reset_index(level=0, drop=True)
     df["NR7"] = (df["Range"] == rng7min)
 
-    # Keep latest day per symbol
     last_date = df["Date"].max()
     latest = df[df["Date"] == last_date].copy()
 
-    # Join Deliverables% (best-effort)
+    # Join Deliverables% (same date if available)
     if deliv_latest is not None and not deliv_latest.empty:
         dl = deliv_latest.copy()
         dl["Date"] = pd.to_datetime(dl["Date"])
@@ -420,7 +471,6 @@ def compute_indicators_and_write_latest(deliv_latest: Optional[pd.DataFrame]) ->
     else:
         latest["Delivery_Pct"] = None
 
-    # Write limited columns
     out_cols = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume",
                 "Range","TR","ATR14","SMA10","SMA20","SMA50","BB_Mid","BB_Upper","BB_Lower",
                 "BB_Bandwidth","CLV","RangeAvg20","VolAvg20","HI55","HI55_Recent","NR7","Delivery_Pct"]
@@ -442,11 +492,11 @@ def main():
                                                             "BB_Bandwidth","CLV","RangeAvg20","VolAvg20","HI55","HI55_Recent","NR7","Delivery_Pct"])
 
     s = get_session()
-    status = {"ok": True, "when_ist": now_ist().isoformat(), "steps": {}}
+    status = {"ok": True, "when_ist": now_ist().isoformat(), "steps": {}, "debug": {}}
 
-    # Deliverables
+    # Deliverables (MTO)
     try:
-        ddf = fetch_deliverables_latest(s)
+        ddf = fetch_deliverables_latest(s, status["debug"])
         if ddf is not None and not ddf.empty:
             atomic_write_df(ddf, FILES["deliverables_latest"])
             try: hist = pd.read_csv(FILES["deliverables_hist"])
@@ -467,9 +517,9 @@ def main():
         status["ok"] = False
         status["steps"]["deliverables"] = {"ok": False, "error": str(e)}
 
-    # Bulk & Block (best-effort)
+    # Bulk & Block (best-effort; may be empty due to API shielding)
     try:
-        bdf = fetch_corporates(s, "bulk")
+        bdf = fetch_corporates(s, "bulk", status["debug"])
         if bdf is not None and not bdf.empty:
             atomic_write_df(bdf, FILES["bulk_latest"])
             status["steps"]["bulk"] = {"ok": True, "rows": int(len(bdf))}
@@ -478,7 +528,7 @@ def main():
     except Exception as e:
         status["steps"]["bulk"] = {"ok": False, "error": str(e)}
     try:
-        kdf = fetch_corporates(s, "block")
+        kdf = fetch_corporates(s, "block", status["debug"])
         if kdf is not None and not kdf.empty:
             atomic_write_df(kdf, FILES["block_latest"])
             status["steps"]["block"] = {"ok": True, "rows": int(len(kdf))}
@@ -487,7 +537,7 @@ def main():
     except Exception as e:
         status["steps"]["block"] = {"ok": False, "error": str(e)}
 
-    # Bhav hist cold-start: use local/remote latest; else seed from archives if hist empty
+    # Bhav hist: try local/remote latest; if still empty -> cold-seed from archives (multi-source)
     seeded_rows = 0
     try:
         bl = load_bhav_latest_local_or_remote()
@@ -505,10 +555,9 @@ def main():
                 allb = allb[allb["Date"] >= cutoff].copy()
                 allb["Date"] = allb["Date"].dt.strftime("%Y-%m-%d")
             atomic_write_df(allb, FILES["bhav_hist"])
-        # If still empty: cold-seed from NSE archives (~90 trading days)
-        seeded_rows = cold_seed_bhav_hist_if_empty(s, min_days=90)
-    except Exception:
-        pass
+        seeded_rows = cold_seed_bhav_hist_if_empty(s, status["debug"], min_days=90)
+    except Exception as e:
+        status["debug"]["bhav_seed_error"] = str(e)
 
     # Derive 52W
     try:
@@ -527,8 +576,8 @@ def main():
             for c in ["High52W_Date","Low52W_Date"]:
                 out[c] = pd.to_datetime(out[c], errors="coerce").dt.strftime("%Y-%m-%d")
             atomic_write_df(out[["Symbol","High52W","High52W_Date","Low52W","Low52W_Date"]], FILES["hi52w"])
-    except Exception:
-        pass
+    except Exception as e:
+        status["debug"]["hi52w_error"] = str(e)
 
     # Indicators → tech_latest.csv
     try:
@@ -539,7 +588,6 @@ def main():
 
     # Status
     try:
-        # Add bhav hist stats
         try:
             hh = pd.read_csv(FILES["bhav_hist"])
             status["steps"]["bhav_hist_52w"] = {"ok": bool(len(hh) > 0), "hist_rows": int(len(hh)), "seeded_rows": int(seeded_rows)}
