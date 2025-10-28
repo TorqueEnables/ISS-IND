@@ -15,21 +15,33 @@ jobs:
         uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
+      jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
+          cache-dependency-path: "requirements.txt"
 
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install pandas requests
+          pip install -r requirements.txt
 
+      # (keep your existing steps below this point)
       - name: Run fetcher (timed; bounded)
         env:
           SEED_MIN_DAYS: "90"
-          SEED_MAX_SECONDS: "720"   # 12 min budget for seeding
+          SEED_MAX_SECONDS: "720"
           SEED_WORKERS: "8"
         run: |
           date -u +"start:%Y-%m-%dT%H:%M:%SZ"
