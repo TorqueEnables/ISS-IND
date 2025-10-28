@@ -1,6 +1,6 @@
 {
   "ok": false,
-  "when_ist": "2025-10-28T14:49:34.627580+05:30",
+  "when_ist": "2025-10-28T15:06:58.506495+05:30",
   "steps": {
     "deliverables": {
       "ok": false,
@@ -24,5 +24,47 @@
       "hist_rows": 0,
       "seeded_rows": 0
     }
+  },
+  "debug": {
+    "mto_tried": [
+      "https://archives.nseindia.com/archives/equities/mto/MTO_28102025.DAT",
+      "https://www.nseindia.com/archives/equities/mto/MTO_28102025.DAT",
+      "https://www1.nseindia.com/archives/equities/mto/MTO_28102025.DAT",
+      "https://archives.nseindia.com/archives/equities/mto/MTO_27102025.DAT",
+      "https://www.nseindia.com/archives/equities/mto/MTO_27102025.DAT",
+      "https://www1.nseindia.com/archives/equities/mto/MTO_27102025.DAT",
+      "https://archives.nseindia.com/archives/equities/mto/MTO_24102025.DAT",
+      "https://www.nseindia.com/archives/equities/mto/MTO_24102025.DAT",
+      "https://www1.nseindia.com/archives/equities/mto/MTO_24102025.DAT",
+      "https://archives.nseindia.com/archives/equities/mto/MTO_23102025.DAT",
+      "https://www.nseindia.com/archives/equities/mto/MTO_23102025.DAT",
+      "https://www1.nseindia.com/archives/equities/mto/MTO_23102025.DAT",
+      "https://archives.nseindia.com/archives/equities/mto/MTO_22102025.DAT",
+      "https://www.nseindia.com/archives/equities/mto/MTO_22102025.DAT",
+      "https://www1.nseindia.com/archives/equities/mto/MTO_22102025.DAT",
+      "https://archives.nseindia.com/archives/equities/mto/MTO_21102025.DAT",
+      "https://www.nseindia.com/archives/equities/mto/MTO_21102025.DAT",
+      "https://www1.nseindia.com/archives/equities/mto/MTO_21102025.DAT",
+      "https://archives.nseindia.com/archives/equities/mto/MTO_20102025.DAT",
+      "https://www.nseindia.com/archives/equities/mto/MTO_20102025.DAT",
+      "https://www1.nseindia.com/archives/equities/mto/MTO_20102025.DAT"
+    ],
+    "bulk_tried": [
+      "https://www.nseindia.com/api/corporates-bulk-deals?index=equities",
+      "https://www.nseindia.com/api/corporates/bulk-deals?index=equities",
+      "https://www.nseindia.com/api/corporates-pit?index=bulk-deals"
+    ],
+    "block_tried": [
+      "https://www.nseindia.com/api/corporates-block-deals?index=equities",
+      "https://www.nseindia.com/api/corporates/block-deals?index=equities",
+      "https://www.nseindia.com/api/corporates-pit?index=block-deals"
+    ],
+    "bhav_tried": [
+      "https://archives.nseindia.com/products/content/sec_bhavdata_full_27102025.csv",
+      "https://archives.nseindia.com/content/historical/EQUITIES/2025/OCT/cm27OCT2025bhav.csv.zip",
+      "https://www.nseindia.com/content/historical/EQUITIES/2025/OCT/cm27OCT2025bhav.csv.zip",
+      "https://www1.nseindia.com/content/historical/EQUITIES/2025/OCT/cm27OCT2025bhav.csv.zip"
+    ],
+    "bhav_seed_error": "HTTPSConnectionPool(host='www1.nseindia.com', port=443): Max retries exceeded with url: /content/historical/EQUITIES/2025/OCT/cm27OCT2025bhav.csv.zip (Caused by SSLError(SSLError(1, '[SSL: TLSV1_ALERT_INTERNAL_ERROR] tlsv1 alert internal error (_ssl.c:1016)')))"
   }
 }
