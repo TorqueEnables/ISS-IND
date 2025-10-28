@@ -1,0 +1,46 @@
+name: Fetch NSE EOD Prices (Bhavcopy)
+
+on:
+  schedule:
+    - cron: "15 2 * * *"   # 02:15 UTC ≈ 07:45 IST (before your 08:05 sheet tick)
+  workflow_dispatch: {}     # allow manual runs
+
+# keep it from colliding with other pushes
+concurrency:
+  group: prices-fetch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Run price fetcher
+        run: |
+          bash scripts/fetch_prices.sh
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git config pull.rebase true
+
+      - name: Commit price CSVs
+        run: |
+          git add -A data/prices/*.csv
+          git diff --staged --quiet && echo "No changes" && exit 0 || true
+          git commit -m "Bhav update: $(date -u +%F)"
+
+      - name: Rebase & push
+        run: |
+          git pull --rebase --autostash origin ${{ github.ref_name }} || true
+          git push origin HEAD:${{ github.ref_name }}
