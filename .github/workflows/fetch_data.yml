@@ -2,7 +2,7 @@ name: Fetch NSE EOD data (robust)
 
 on:
   schedule:
-    # 17:35 UTC ≈ 23:05 IST daily (after NSE posts MTO; safer than early evening)
+    # 17:35 UTC ≈ 23:05 IST daily (safer: MTO + corporates usually live)
     - cron: "35 17 * * *"
   workflow_dispatch: {}
 
@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -28,23 +30,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests pytz
 
-      - name: Run fetcher (always green; warnings recorded)
+      - name: Run fetcher (record warnings; never fail)
         env:
           # Fallback URL if local bhav_latest.csv is missing
           GH_RAW_BHAV_URL: "https://raw.githubusercontent.com/TorqueEnables/ISS-IND/main/data/prices/bhav_latest.csv"
         run: |
           python scripts/fetch_market_data.py || true
 
-      - name: Commit & push if changed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if [ -n "$(git status --porcelain)" ]; then
-            git commit -m "data: update EOD sources [robust]" || echo "Nothing to commit"
-            git push || echo "Nothing to push"
-          else:
-            echo "No changes to commit."
+      - name: Auto-commit any changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "data: update EOD sources [robust]"
+          file_pattern: |
+            data/*.csv
+            data/*.json
+            data/prices/bhav_hist.csv
 
       - name: Show status
         run: |
