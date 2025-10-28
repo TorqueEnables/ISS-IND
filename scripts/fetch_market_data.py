@@ -67,18 +67,15 @@ def previous_business_day(d: datetime):
     return d - timedelta(days=1)
 
 def get_session():
-    # NSE tends to require an initial homepage hit + headers for cookies
     s = requests.Session()
     s.headers.update({
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
         "Connection": "keep-alive",
         "DNT": "1",
-        "Upgrade-Insecure-Requests": "1",
+        "Referer": "https://www.nseindia.com/market-data/large-deals",
     })
-    # Warm up cookies
     try:
         s.get("https://www.nseindia.com", timeout=20)
     except Exception:
