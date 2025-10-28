@@ -1,24 +1,23 @@
 name: Fetch NSE EOD data (robust)
 
 on:
-  schedule:
-    # 17:35 UTC ≈ 23:05 IST daily (after NSE updates)
-    - cron: "35 17 * * *"
   workflow_dispatch: {}
+  schedule:
+    - cron: '35 11 * * 1-5'   # runs ~17:05 IST, Mon–Fri
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fetch-eod-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   fetch:
+    name: Fetch & publish EOD CSVs
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
 
-      jobs:
-  fetch:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -28,21 +27,20 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: "requirements.txt"
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
 
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # (keep your existing steps below this point)
       - name: Run fetcher (timed; bounded)
         env:
-          SEED_MIN_DAYS: "90"
-          SEED_MAX_SECONDS: "720"
-          SEED_WORKERS: "8"
+          SEED_MIN_DAYS: '90'
+          SEED_MAX_SECONDS: '720'   # 12 minutes
+          SEED_WORKERS: '8'
         run: |
           date -u +"start:%Y-%m-%dT%H:%M:%SZ"
           /usr/bin/time -f "cpu:%P wall:%E mem:%MKB" python scripts/fetch_market_data.py || true
@@ -66,8 +64,8 @@ jobs:
             data/**
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          commit_author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
 
       - name: Show status file
         run: |
-          cat data/fetch_status.json || echo '{"ok": false, "note": "status file missing"}'
-
+          test -f data/fetch_status.json && cat data/fetch_status.json || echo '{"ok": false, "note": "status file missing"}'
