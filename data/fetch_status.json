@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "when_ist": "2025-10-28T14:34:26.698542+05:30",
+  "steps": {
+    "deliverables": {
+      "ok": false,
+      "error": "MTO not available for recent days"
+    },
+    "bulk": {
+      "ok": false,
+      "error": "No bulk data"
+    },
+    "block": {
+      "ok": false,
+      "error": "No block data"
+    },
+    "bhav_hist_52w": {
+      "ok": true,
+      "hist_rows": 0
+    }
+  }
+}
