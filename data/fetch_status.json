@@ -1,6 +1,6 @@
 {
   "ok": false,
-  "when_ist": "2025-10-28T14:34:26.698542+05:30",
+  "when_ist": "2025-10-28T14:49:34.627580+05:30",
   "steps": {
     "deliverables": {
       "ok": false,
@@ -14,9 +14,15 @@
       "ok": false,
       "error": "No block data"
     },
+    "tech_latest": {
+      "ok": false,
+      "rows": 0,
+      "note": "hist empty"
+    },
     "bhav_hist_52w": {
-      "ok": true,
-      "hist_rows": 0
+      "ok": false,
+      "hist_rows": 0,
+      "seeded_rows": 0
     }
   }
 }
