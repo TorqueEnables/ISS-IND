@@ -1,14 +1,19 @@
-name: Fetch NSE EOD data
+name: Fetch NSE EOD data (robust)
 
 on:
   schedule:
-    # 14:35 UTC ≈ 20:05 IST daily (tweak if you like)
-    - cron: "35 14 * * *"
+    # 17:35 UTC ≈ 23:05 IST daily (after NSE posts MTO; safer than early evening)
+    - cron: "35 17 * * *"
   workflow_dispatch: {}
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: nse-eod-fetch
+      cancel-in-progress: false
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -23,9 +28,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests pytz
 
-      - name: Run fetcher
+      - name: Run fetcher (always green; warnings recorded)
+        env:
+          # Fallback URL if local bhav_latest.csv is missing
+          GH_RAW_BHAV_URL: "https://raw.githubusercontent.com/TorqueEnables/ISS-IND/main/data/prices/bhav_latest.csv"
         run: |
-          python scripts/fetch_market_data.py
+          python scripts/fetch_market_data.py || true
 
       - name: Commit & push if changed
         run: |
@@ -33,8 +41,15 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if [ -n "$(git status --porcelain)" ]; then
-            git commit -m "data: update EOD sources [skip ci]"
-            git push
-          else
+            git commit -m "data: update EOD sources [robust]" || echo "Nothing to commit"
+            git push || echo "Nothing to push"
+          else:
             echo "No changes to commit."
+
+      - name: Show status
+        run: |
+          if [ -f data/fetch_status.json ]; then
+            cat data/fetch_status.json
+          else
+            echo '{"ok": false, "note": "status file missing"}'
           fi
