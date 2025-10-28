@@ -9,32 +9,32 @@ on:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    concurrency:
-      group: nse-eod-fetch
-      cancel-in-progress: false
+    timeout-minutes: 30
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: { fetch-depth: 0 }
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install pandas requests pytz
+          pip install pandas requests
 
-      - name: Run fetcher (record warnings; never fail)
+      - name: Run fetcher (timed; bounded)
         env:
-          GH_RAW_BHAV_URL: "https://raw.githubusercontent.com/TorqueEnables/ISS-IND/main/data/prices/bhav_latest.csv"
+          SEED_MIN_DAYS: "90"
+          SEED_MAX_SECONDS: "720"   # 12 min budget for seeding
+          SEED_WORKERS: "8"
         run: |
-          python scripts/fetch_market_data.py || true
+          date -u +"start:%Y-%m-%dT%H:%M:%SZ"
+          /usr/bin/time -f "cpu:%P wall:%E mem:%MKB" python scripts/fetch_market_data.py || true
+          date -u +"end:%Y-%m-%dT%H:%M:%SZ"
 
       - name: Show workspace tree (debug)
         run: |
@@ -58,3 +58,4 @@ jobs:
       - name: Show status file
         run: |
           cat data/fetch_status.json || echo '{"ok": false, "note": "status file missing"}'
+
