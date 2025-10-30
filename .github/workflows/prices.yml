@@ -1,46 +1,71 @@
 name: Fetch NSE EOD Prices (Bhavcopy)
 
 on:
+  workflow_dispatch: {}
   schedule:
-    - cron: "15 2 * * *"   # 02:15 UTC ≈ 07:45 IST (before your 08:05 sheet tick)
-  workflow_dispatch: {}     # allow manual runs
+    - cron: '35 11 * * 1-5'   # ~17:05 IST on weekdays
 
-# keep it from colliding with other pushes
+permissions:
+  contents: write
+
+# Manual runs won't get canceled by scheduled runs
 concurrency:
-  group: prices-fetch-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'schedule' }}
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    timeout-minutes: 60
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
 
-      - name: Run price fetcher
-        run: |
-          bash scripts/fetch_prices.sh
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
 
-      - name: Configure git
+      - name: Install deps
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-          git config pull.rebase true
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Commit price CSVs
+      - name: Run fetcher (timed; bounded)
+        env:
+          SEED_MIN_DAYS: '90'     # set to '60' for first success, then back to 90
+          SEED_MAX_SECONDS: '720' # 12 min budget
+          SEED_WORKERS: '8'
         run: |
-          git add -A data/prices/*.csv
-          git diff --staged --quiet && echo "No changes" && exit 0 || true
-          git commit -m "Bhav update: $(date -u +%F)"
+          date -u +"start:%Y-%m-%dT%H:%M:%SZ"
+          /usr/bin/time -f "cpu:%P wall:%E mem:%MKB" python scripts/fetch_market_data.py || true
+          date -u +"end:%Y-%m-%dT%H:%M:%SZ"
 
-      - name: Rebase & push
+      - name: Show workspace tree (debug)
         run: |
-          git pull --rebase --autostash origin ${{ github.ref_name }} || true
-          git push origin HEAD:${{ github.ref_name }}
+          echo "::group::Tree"
+          ls -lah
+          echo "----- data/"
+          ls -lah data || true
+          echo "----- data/prices/"
+          ls -lah data/prices || true
+          echo "::endgroup::"
+
+      - name: Auto-commit any changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "data: update EOD sources [robust]"
+          file_pattern: |
+            data/**
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          commit_author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+
+      - name: Show status file
+        run: |
+          test -f data/fetch_status.json && cat data/fetch_status.json || echo '{"ok": false, "note": "status file missing"}'
