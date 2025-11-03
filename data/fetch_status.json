@@ -1,5 +1,51 @@
 {
   "ok": true,
-  "mode": "rollback-placeholder",
-  "note": "No network fetch performed. Safe baseline in place."
+  "when_ist": "2025-11-03T09:57:08.927863+05:30",
+  "steps": {
+    "bhav": {
+      "ok": false,
+      "date": null,
+      "rows": 0,
+      "budget_s": 7
+    },
+    "bhav_hist": {
+      "rows": 0,
+      "prev_last_date": null,
+      "last_date": null
+    },
+    "bulk": {
+      "ok": true,
+      "rows": 1
+    },
+    "block": {
+      "ok": true,
+      "rows": 1
+    },
+    "deliverables": {
+      "ok": false,
+      "rows": 0
+    },
+    "tech_latest": {
+      "ok": false,
+      "rows": 0,
+      "note": "hist empty"
+    }
+  },
+  "debug": {
+    "bhav_urls_tried": [
+      "https://archives.nseindia.com/products/content/sec_bhavdata_full_03112025.csv",
+      "http://archives.nseindia.com/products/content/sec_bhavdata_full_03112025.csv",
+      "https://archives.nseindia.com/content/historical/EQUITIES/2025/NOV/cm03NOV2025bhav.csv.zip",
+      "http://archives.nseindia.com/content/historical/EQUITIES/2025/NOV/cm03NOV2025bhav.csv.zip",
+      "https://archives.nseindia.com/products/content/sec_bhavdata_full_31102025.csv",
+      "http://archives.nseindia.com/products/content/sec_bhavdata_full_31102025.csv",
+      "https://archives.nseindia.com/content/historical/EQUITIES/2025/OCT/cm31OCT2025bhav.csv.zip",
+      "http://archives.nseindia.com/content/historical/EQUITIES/2025/OCT/cm31OCT2025bhav.csv.zip",
+      "https://archives.nseindia.com/products/content/sec_bhavdata_full_30102025.csv",
+      "http://archives.nseindia.com/products/content/sec_bhavdata_full_30102025.csv",
+      "https://archives.nseindia.com/content/historical/EQUITIES/2025/OCT/cm30OCT2025bhav.csv.zip",
+      "http://archives.nseindia.com/content/historical/EQUITIES/2025/OCT/cm30OCT2025bhav.csv.zip"
+    ]
+  },
+  "stale_2biz_days": true
 }
