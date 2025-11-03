@@ -9,7 +9,6 @@ permissions:
   contents: write
   issues: write
 
-# Manual runs won't be canceled by scheduled ones
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'schedule' }}
@@ -22,7 +21,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -40,7 +40,6 @@ jobs:
           date -u +"start:%Y-%m-%dT%H:%M:%SZ"
           /usr/bin/time -f "cpu:%P wall:%E mem:%MKB" python scripts/fetch_market_data.py || true
           date -u +"end:%Y-%m-%dT%H:%M:%SZ"
-          echo "done=true" >> "$GITHUB_OUTPUT"
 
       - name: Auto-commit any changes
         uses: stefanzweifel/git-auto-commit-action@v5
@@ -58,19 +57,23 @@ jobs:
           cat data/fetch_status.json || echo '{"ok":false,"note":"missing"}'
           echo "::endgroup::"
 
-      # Staleness guard: if last hist date hasn't advanced for 2 business days, open an issue
+      # Write "stale=true/false" to $GITHUB_OUTPUT (no deprecated ::set-output)
       - name: Check staleness and set output
         id: stale_check
         run: |
           python - <<'PY'
-          import json, sys
+          import json, os
+          stale = 'true'
           try:
-              data = json.load(open("data/fetch_status.json","r"))
-              print(f"stale={str(data.get('stale_2biz_days', False)).lower()}")
+              with open('data/fetch_status.json','r', encoding='utf-8') as f:
+                  data = json.load(f)
+              stale = 'true' if data.get('stale_2biz_days', False) else 'false'
           except Exception:
-              print("stale=true")
+              stale = 'true'
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as g:
+              g.write(f"stale={stale}\n")
+          print(f"stale={stale}")
           PY
-          | tee /dev/stderr | sed -n 's/^stale=\(true\|false\)$/::set-output name=stale::\1/p'
 
       - name: Create issue if stale
         if: steps.stale_check.outputs.stale == 'true'
@@ -80,18 +83,21 @@ jobs:
             const fs = require('fs');
             let status = {};
             try { status = JSON.parse(fs.readFileSync('data/fetch_status.json','utf8')); } catch (e) {}
-            const last = status?.steps?.bhav_hist?.last_date || "unknown";
-            const urls = (status?.debug?.bhav_urls_tried || []).slice(0,5).join("\n- ");
-            const body = `Auto-alert: bhav_hist has not advanced for >= 2 business days.
-
-**Last hist date:** ${last}
-**Tried urls (sample):**
-- ${urls}
-
-**Action:** No manual intervention required. The job is fail-fast by design. If this persists for 3+ days, consider re-running manually or switching to Option B (edge mirror).`;
+            const last = (status.steps && status.steps.bhav_hist && status.steps.bhav_hist.last_date) ? status.steps.bhav_hist.last_date : 'unknown';
+            const tried = (status.debug && Array.isArray(status.debug.bhav_urls_tried)) ? status.debug.bhav_urls_tried.slice(0,5) : [];
+            const body = [
+              'Auto-alert: bhav_hist has not advanced for >= 2 business days.',
+              '',
+              'Last hist date: ' + last,
+              'Tried urls (sample):',
+              '- ' + tried.join('\n- '),
+              '',
+              'Action: No manual intervention required. The job is fail-fast by design. If this persists for 3+ days, re-run manually or consider Option B (edge mirror).'
+            ].join('\n');
+            const title = 'Data stale: bhav_hist not updated (last=' + last + ')';
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Data stale: bhav_hist not updated (last=${last})`,
+              title,
               body
             });
