@@ -12,7 +12,7 @@ on:
       - 'data/block_deals_latest.csv'
       - 'data/CF-Insider-Trading-equities-latest.csv'
   schedule:
-    - cron: '10 0 * * 1'   # 05:40 IST Mondays (adjust as you like)
+    - cron: '10 0 * * 1'   # 05:40 IST Mondays
 
 permissions:
   contents: write
@@ -35,6 +35,23 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Show inputs (debug)
+        run: |
+          echo "::group::Tree"
+          ls -lah
+          echo "::endgroup::"
+          echo "::group::data/"
+          ls -lah data || true
+          echo "::endgroup::"
+          echo "::group::data/prices/"
+          ls -lah data/prices || true
+          echo "::endgroup::"
+          echo "::group::CSV heads"
+          for f in data/tech_latest.csv data/prices/bhav_hist.csv data/highlow_52w.csv; do
+            echo "== $f =="; head -n 3 "$f" || true; wc -l "$f" || true
+          done
+          echo "::endgroup::"
 
       - name: Run scorer
         run: |
