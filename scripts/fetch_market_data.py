@@ -329,4 +329,241 @@ def _num(v):
 # ---------------- Local ingest (robust) ----------------
 def ingest_local_bhav_candidates() -> Dict[str, Any]:
     """
-    Ingest any local bhav CSVs und
+    Ingest any local bhav CSVs under data/prices/:
+      - sec_bhavdata_full_*.csv (products link format)
+      - cm*bhav*.csv (historical zipped CSV if unzipped locally)
+      - bhav_latest.csv (manual drop)
+    Only merges rows that are newer than/absent in hist; de-duplicates by (Date, Symbol).
+    """
+    patterns = ["sec_bhavdata_full_*.csv", "cm*bhav*.csv", "bhav_latest.csv"]
+    files = []
+    for pat in patterns:
+        files.extend(glob.glob(os.path.join(PRICES_DIR, pat)))
+    files = sorted(set(files))
+    used = []
+    total_rows_added = 0
+    last_local_date = None
+
+    # Load existing hist
+    try:
+        hist = pd.read_csv(FILES["bhav_hist"])
+    except Exception:
+        hist = pd.DataFrame(columns=KEEP_COLS)
+    if not hist.empty:
+        hist["Date"] = pd.to_datetime(hist["Date"], errors="coerce")
+
+    for path in files:
+        try:
+            raw = pd.read_csv(path)
+            df = normalize_bhav(raw)
+            if df.empty: 
+                continue
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            # Filter out rows already present (by Date+Symbol)
+            if not hist.empty:
+                key = pd.MultiIndex.from_frame(hist[["Date","Symbol"]])
+                mkey = pd.MultiIndex.from_frame(df[["Date","Symbol"]])
+                mask_new = ~mkey.isin(key)
+                df = df.loc[mask_new]
+            if df.empty:
+                continue
+            # Merge
+            hist = pd.concat([hist, df], ignore_index=True)
+            used.append(os.path.basename(path))
+            total_rows_added += len(df)
+            if last_local_date is None or df["Date"].max() > last_local_date:
+                last_local_date = df["Date"].max()
+        except Exception:
+            continue
+
+    if used:
+        # Trim to ~460 days rolling
+        hist = hist.drop_duplicates(subset=["Date","Symbol"], keep="last")
+        hist["Date"] = pd.to_datetime(hist["Date"], errors="coerce")
+        cutoff = hist["Date"].max() - timedelta(days=460)
+        hist = hist[hist["Date"] >= cutoff].copy()
+        atomic_write_df(hist.sort_values(["Date","Symbol"]).assign(Date=hist["Date"].dt.strftime("%Y-%m-%d")), FILES["bhav_hist"])
+        return {
+            "used": True,
+            "files": used,
+            "added_rows": int(total_rows_added),
+            "date": None if last_local_date is None else last_local_date.strftime("%Y-%m-%d")
+        }
+    else:
+        return {"used": False, "files": [], "added_rows": 0, "date": None, "reason": "no_matching_or_empty"}
+
+# ---------------- Indicators ----------------
+def compute_indicators_and_latest(deliv_latest: Optional[pd.DataFrame]) -> Dict[str, Any]:
+    try:
+        hist = pd.read_csv(FILES["bhav_hist"])
+    except Exception:
+        hist = pd.DataFrame(columns=KEEP_COLS)
+    if hist.empty:
+        ensure_headers(FILES["tech_latest"], ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume",
+                                              "Range","TR","ATR14","SMA10","SMA20","SMA50","BB_Mid","BB_Upper","BB_Lower",
+                                              "BB_Bandwidth","CLV","RangeAvg20","VolAvg20","HI55","HI55_Recent","NR7","Delivery_Pct"])
+        return {"ok": False, "rows": 0, "note": "hist empty"}
+
+    df = hist.copy()
+    df["Date"] = pd.to_datetime(df["Date"]); df = df.sort_values(["Symbol","Date"])
+    df["Range"] = df["High"] - df["Low"]
+    tr1 = df["Range"]; tr2 = (df["High"] - df["PrevClose"]).abs(); tr3 = (df["Low"] - df["PrevClose"]).abs()
+    df["TR"] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    g = df.groupby("Symbol", group_keys=False)
+    df["ATR14"] = g["TR"].rolling(14, min_periods=14).mean().reset_index(level=0, drop=True)
+    df["SMA10"] = g["Close"].rolling(10, min_periods=10).mean().reset_index(level=0, drop=True)
+    df["SMA20"] = g["Close"].rolling(20, min_periods=20).mean().reset_index(level=0, drop=True)
+    df["SMA50"] = g["Close"].rolling(50, min_periods=50).mean().reset_index(level=0, drop=True)
+    std20 = g["Close"].rolling(20, min_periods=20).std(ddof=0).reset_index(level=0, drop=True)
+    df["BB_Mid"] = df["SMA20"]; df["BB_Upper"] = df["BB_Mid"] + 2*std20; df["BB_Lower"] = df["BB_Mid"] - 2*std20
+    df["BB_Bandwidth"] = (df["BB_Upper"] - df["BB_Lower"]) / df["BB_Mid"]
+    df["CLV"] = 0.5
+    nz = (df["High"] != df["Low"])
+    df.loc[nz, "CLV"] = (df.loc[nz, "Close"] - df.loc[nz, "Low"]) / (df.loc[nz, "High"] - df.loc[nz, "Low"])
+    df["RangeAvg20"] = g["Range"].rolling(20, min_periods=20).mean().reset_index(level=0, drop=True)
+    df["VolAvg20"] = g["Volume"].rolling(20, min_periods=20).mean().reset_index(level=0, drop=True)
+    roll_hi55 = g["High"].rolling(55, min_periods=55).max().reset_index(level=0, drop=True)
+    df["HI55"] = (df["High"] == roll_hi55)
+    df["HI55_Recent"] = g["HI55"].rolling(5, min_periods=1).max().reset_index(level=0, drop=True).astype(bool)
+    rng7min = g["Range"].rolling(7, min_periods=7).min().reset_index(level=0, drop=True)
+    df["NR7"] = (df["Range"] == rng7min)
+
+    last_date = df["Date"].max()
+    latest = df[df["Date"] == last_date].copy()
+    if deliv_latest is not None and not deliv_latest.empty:
+        dl = deliv_latest.copy()
+        dl["Date"] = pd.to_datetime(dl["Date"])
+        dl = dl[dl["Date"] == last_date][["Symbol","Delivery_Pct"]]
+        latest = latest.merge(dl, on="Symbol", how="left")
+    else:
+        latest["Delivery_Pct"] = None
+
+    cols = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume",
+            "Range","TR","ATR14","SMA10","SMA20","SMA50","BB_Mid","BB_Upper","BB_Lower",
+            "BB_Bandwidth","CLV","RangeAvg20","VolAvg20","HI55","HI55_Recent","NR7","Delivery_Pct"]
+    atomic_write_df(latest[cols], FILES["tech_latest"])
+    return {"ok": True, "rows": int(len(latest)), "last_date": last_date.strftime("%Y-%m-%d")}
+
+# ---------------- Main ----------------
+def main():
+    ensure_dirs()
+    # Ensure stable headers first
+    ensure_headers(FILES["deliverables_latest"], ["Date","Symbol","Series","Deliverable_Qty","Traded_Qty","Delivery_Pct"])
+    ensure_headers(FILES["deliverables_hist"],   ["Date","Symbol","Series","Deliverable_Qty","Traded_Qty","Delivery_Pct"])
+    ensure_headers(FILES["bulk_latest"],         ["Date","Symbol","Client_Name","Buy_Sell","Quantity","Price","Source"])
+    ensure_headers(FILES["block_latest"],        ["Date","Symbol","Client_Name","Buy_Sell","Quantity","Price","Source"])
+    ensure_headers(FILES["hi52w"],               ["Symbol","High52W","High52W_Date","Low52W","Low52W_Date"])
+    ensure_headers(FILES["bhav_hist"],           KEEP_COLS)
+    ensure_headers(FILES["tech_latest"],         ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume",
+                                                  "Range","TR","ATR14","SMA10","SMA20","SMA50","BB_Mid","BB_Upper","BB_Lower",
+                                                  "BB_Bandwidth","CLV","RangeAvg20","VolAvg20","HI55","HI55_Recent","NR7","Delivery_Pct"])
+
+    # Hist last date (for staleness)
+    prev_last_date = None
+    try:
+        hh = pd.read_csv(FILES["bhav_hist"])
+        if not hh.empty:
+            prev_last_date = pd.to_datetime(hh["Date"]).max()
+    except Exception:
+        pass
+
+    # 1) Network attempt (strict budget)
+    bhav_res = fetch_latest_bhav_failfast()
+
+    # If network succeeded, merge it first
+    if bhav_res["ok"]:
+        try:
+            hist = pd.read_csv(FILES["bhav_hist"])
+        except Exception:
+            hist = pd.DataFrame(columns=KEEP_COLS)
+        new_day = bhav_res["df"].copy()
+        new_day["Date"] = pd.to_datetime(new_day["Date"], errors="coerce")
+        merged = pd.concat([hist, new_day], ignore_index=True).drop_duplicates(subset=["Date","Symbol"], keep="last")
+        if not merged.empty:
+            merged["Date"] = pd.to_datetime(merged["Date"], errors="coerce")
+            cutoff = merged["Date"].max() - timedelta(days=460)
+            merged = merged[merged["Date"] >= cutoff].copy()
+            atomic_write_df(merged.sort_values(["Date","Symbol"]).assign(Date=merged["Date"].dt.strftime("%Y-%m-%d")),
+                            FILES["bhav_hist"])
+
+    # 2) Local ingest (always attempt; merges only if new/absent)
+    local_res = ingest_local_bhav_candidates()
+
+    # Determine new hist state
+    hist_rows_after = 0; new_last_date = prev_last_date
+    try:
+        hist = pd.read_csv(FILES["bhav_hist"])
+        if not hist.empty:
+            hist_rows_after = int(len(hist))
+            new_last_date = pd.to_datetime(hist["Date"]).max()
+    except Exception:
+        pass
+
+    # 3) Corporates (best-effort)
+    bulk_res  = fetch_corporates_one("bulk")
+    if bulk_res["ok"]: atomic_write_df(bulk_res["df"], FILES["bulk_latest"])
+    block_res = fetch_corporates_one("block")
+    if block_res["ok"]: atomic_write_df(block_res["df"], FILES["block_latest"])
+    mto_res   = fetch_mto_latest()
+    if mto_res["ok"]:
+        atomic_write_df(mto_res["df"], FILES["deliverables_latest"])
+        try: mh = pd.read_csv(FILES["deliverables_hist"])
+        except Exception: mh = pd.DataFrame(columns=mto_res["df"].columns)
+        allm = pd.concat([mh, mto_res["df"]], ignore_index=True).drop_duplicates(subset=["Date","Symbol","Series"], keep="last")
+        if not allm.empty:
+            allm["Date"] = pd.to_datetime(allm["Date"]); cutoff = allm["Date"].max() - timedelta(days=120)
+            allm = allm[allm["Date"] >= cutoff].copy()
+            atomic_write_df(allm.assign(Date=allm["Date"].dt.strftime("%Y-%m-%d")), FILES["deliverables_hist"])
+
+    # 4) Derive 52W (from hist)
+    try:
+        df = pd.read_csv(FILES["bhav_hist"])
+        if not df.empty:
+            df["Date"] = pd.to_datetime(df["Date"])
+            cutoff = df["Date"].max() - timedelta(days=370)
+            df = df[df["Date"] >= cutoff].copy()
+            agg = df.groupby("Symbol").agg(High52W=("High","max"), Low52W=("Low","min")).reset_index()
+            hi = df.merge(agg[["Symbol","High52W"]], on="Symbol").query("High==High52W")
+            hi = hi.sort_values(["Symbol","Date"]).groupby("Symbol").tail(1)[["Symbol","Date"]].rename(columns={"Date":"High52W_Date"})
+            lo = df.merge(agg[["Symbol","Low52W"]], on="Symbol").query("Low==Low52W")
+            lo = lo.sort_values(["Symbol","Date"]).groupby("Symbol").tail(1)[["Symbol","Date"]].rename(columns={"Date":"Low52W_Date"})
+            out = agg.merge(hi, on="Symbol", how="left").merge(lo, on="Symbol", how="left")
+            for c in ["High52W_Date","Low52W_Date"]:
+                out[c] = pd.to_datetime(out[c], errors="coerce").dt.strftime("%Y-%m-%d")
+            atomic_write_df(out[["Symbol","High52W","High52W_Date","Low52W","Low52W_Date"]], FILES["hi52w"])
+    except Exception:
+        pass
+
+    # 5) Indicators (latest-day slice)
+    tech_res = compute_indicators_and_latest(mto_res["df"] if mto_res.get("ok") else None)
+
+    # 6) Status + staleness
+    status = {
+        "ok": True,
+        "when_ist": now_ist_iso(),
+        "steps": {
+            "bhav": {"ok": bool(bhav_res["ok"]), "date": bhav_res.get("date"),
+                     "rows": bhav_res.get("rows", 0), "budget_s": bhav_res.get("budget_s", 0)},
+            "local_bhav": local_res,
+            "bhav_hist": {"rows": hist_rows_after,
+                          "prev_last_date": None if prev_last_date is None else prev_last_date.strftime("%Y-%m-%d"),
+                          "last_date": None if new_last_date is None else new_last_date.strftime("%Y-%m-%d")},
+            "bulk": {"ok": bool(bulk_res["ok"]), "rows": bulk_res.get("rows", 0)},
+            "block": {"ok": bool(block_res["ok"]), "rows": block_res.get("rows", 0)},
+            "deliverables": {"ok": bool(mto_res["ok"]), "rows": mto_res.get("rows", 0)},
+            "tech_latest": tech_res,
+        },
+        "debug": { "bhav_urls_tried": bhav_res.get("tried", [])[:50] }
+    }
+    stale = True
+    if new_last_date is not None:
+        age = biz_age_days(new_last_date)
+        stale = age >= 2
+    status["stale_2biz_days"] = bool(stale)
+
+    atomic_write_text(json.dumps(status, indent=2), FILES["status"])
+    print(json.dumps(status, indent=2))
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
