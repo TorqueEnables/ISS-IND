@@ -1,12 +1,12 @@
 {
   "ok": true,
-  "when_ist": "2025-11-03T13:29:16.957376+05:30",
+  "when_ist": "2025-11-03T13:37:12.375126+05:30",
   "steps": {
     "bhav": {
       "ok": false,
       "date": null,
       "rows": 0,
-      "budget_s": 7
+      "budget_s": 6
     },
     "local_bhav": {
       "used": false,
