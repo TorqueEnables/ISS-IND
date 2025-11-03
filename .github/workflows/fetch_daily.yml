@@ -24,6 +24,26 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Show workspace tree (debug)
+        run: |
+          echo "::group::Tree (top)"
+          ls -lah
+          echo "::endgroup::"
+          echo "::group::data listing"
+          ls -lah data || true
+          echo "::endgroup::"
+          echo "::group::data/prices listing"
+          ls -lah data/prices || true
+          echo "::endgroup::"
+          echo "::group::CSV heads"
+          shopt -s nullglob
+          for f in data/prices/*.csv; do
+            echo "== $f =="
+            head -n 3 "$f" || true
+            wc -l "$f" || true
+          done
+          echo "::endgroup::"
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -57,7 +77,6 @@ jobs:
           cat data/fetch_status.json || echo '{"ok":false,"note":"missing"}'
           echo "::endgroup::"
 
-      # Write "stale=true/false" to $GITHUB_OUTPUT (no deprecated ::set-output)
       - name: Check staleness and set output
         id: stale_check
         run: |
@@ -84,15 +103,22 @@ jobs:
             let status = {};
             try { status = JSON.parse(fs.readFileSync('data/fetch_status.json','utf8')); } catch (e) {}
             const last = (status.steps && status.steps.bhav_hist && status.steps.bhav_hist.last_date) ? status.steps.bhav_hist.last_date : 'unknown';
-            const tried = (status.debug && Array.isArray(status.debug.bhav_urls_tried)) ? status.debug.bhav_urls_tried.slice(0,5) : [];
+            const tried = (status.debug && status.debug.bhav_urls_tried) ? status.debug.bhav_urls_tried.slice(0,5) : [];
+            const local = (status.debug && status.debug.local_files) ? status.debug.local_files : {};
             const body = [
               'Auto-alert: bhav_hist has not advanced for >= 2 business days.',
               '',
               'Last hist date: ' + last,
+              '',
               'Tried urls (sample):',
               '- ' + tried.join('\n- '),
               '',
-              'Action: No manual intervention required. The job is fail-fast by design. If this persists for 3+ days, re-run manually or consider Option B (edge mirror).'
+              'Local files debug:',
+              '  prices_dir_exists: ' + JSON.stringify(local.prices_dir_exists),
+              '  csv_in_prices: ' + JSON.stringify(local.csv_in_prices),
+              '  local_candidates: ' + JSON.stringify(local.local_candidates),
+              '',
+              'Action: Job is fail-fast. If this persists 3+ days, re-run or consider Option B (edge mirror).'
             ].join('\n');
             const title = 'Data stale: bhav_hist not updated (last=' + last + ')';
             await github.rest.issues.create({
