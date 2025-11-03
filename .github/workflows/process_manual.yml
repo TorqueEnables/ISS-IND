@@ -1,0 +1,57 @@
+name: Process Manual Uploads
+
+on:
+  push:
+    paths:
+      - 'data/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run processor (local-only)
+        run: |
+          echo "== StakeLens: Local Manual Processor =="
+          python scripts/process_eod.py
+
+      - name: Auto-commit artifacts
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "process: update derived files from manual uploads"
+          file_pattern: |
+            data/prices/bhav_hist.csv
+            data/prices/bhav_latest.csv
+            data/highlow_52w.csv
+            data/tech_latest.csv
+            data/deliverables_latest.csv
+            data/bulk_deals_latest.csv
+            data/block_deals_latest.csv
+            data/process_status.json
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Show status
+        run: |
+          echo "::group::process_status.json"
+          cat data/process_status.json || true
+          echo "::endgroup::"
