@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-StakeLens Option A — Small, Fast, Daily Append (diagnostic local ingest)
+StakeLens Option A — Small, Fast, Daily Append (header-driven local ingest)
 - Network try (tiny budget). OK if it fails.
-- Robust local ingest from data/prices/:
-    sec_bhavdata_full_*.csv
-    cm*bhav*.csv
-    bhav_YYYYMMDD.csv
-    bhav_latest.csv
+- Robust local ingest from data/prices/ by HEADER SHAPE, not filename:
+    accepts bhav-style CSVs (SYMBOL/SERIES + DATE/DATE1 + price/volume cols)
 - Tolerant normalization (skip-initial-space, dtype=str, multi-format date parsing).
 - Append into data/prices/bhav_hist.csv (de-dup by Date+Symbol; rolling window).
 - Derive data/highlow_52w.csv and data/tech_latest.csv.
-- Write data/fetch_status.json with deep diagnostics.
+- Write data/fetch_status.json with deep diagnostics (including per-file ingest stats).
 """
 
 from __future__ import annotations
-import os, io, json, zipfile, time, glob, re
+import os, io, json, zipfile, time, glob
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
@@ -24,7 +21,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# ---------------- Config ----------------
+# ---------- Config ----------
 IST = timezone(timedelta(hours=5, minutes=30))
 DATA_DIR = "data"
 PRICES_DIR = os.path.join(DATA_DIR, "prices")
@@ -75,7 +72,7 @@ def biz_age_days(from_date: datetime, to_date: Optional[datetime]=None) -> int:
         if cnt > 10000: break
     return cnt
 
-# ---------------- HTTP ----------------
+# ---------- HTTP ----------
 def session_fast() -> requests.Session:
     s = requests.Session()
     s.headers.update({
@@ -91,7 +88,7 @@ def session_fast() -> requests.Session:
     s.mount("https://", ad); s.mount("http://", ad)
     return s
 
-# ---------------- Normalization ----------------
+# ---------- Normalization ----------
 CANON = {
     "date": "Date", "timestamp": "Date", "date1": "Date", "tradedate": "Date", "traded_date": "Date",
     "symbol": "Symbol", "series": "Series",
@@ -106,16 +103,11 @@ CANON = {
 KEEP_COLS = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"]
 
 def _parse_date_series(s: pd.Series) -> pd.Series:
-    # try default
     d = pd.to_datetime(s, errors="coerce")
     if d.notna().sum() >= max(1, int(0.7*len(s))): return d
-    # dayfirst
-    d2 = pd.to_datetime(s, errors="coerce", dayfirst=True)
-    d = d.fillna(d2)
-    # explicit formats
+    d2 = pd.to_datetime(s, errors="coerce", dayfirst=True); d = d.fillna(d2)
     for fmt in ("%d-%b-%Y", "%d-%B-%Y", "%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
-        d3 = pd.to_datetime(s, format=fmt, errors="coerce")
-        d = d.fillna(d3)
+        d3 = pd.to_datetime(s, format=fmt, errors="coerce"); d = d.fillna(d3)
     return d
 
 def normalize_bhav(df: pd.DataFrame) -> pd.DataFrame:
@@ -128,6 +120,7 @@ def normalize_bhav(df: pd.DataFrame) -> pd.DataFrame:
         key = str(c).strip().lower().replace(" ", "_").replace("-", "_")
         new_cols.append(CANON.get(key, str(c).strip()))
     df.columns = new_cols
+    # ensure required cols
     for k in KEEP_COLS:
         if k not in df.columns: df[k] = None
     # clean
@@ -142,7 +135,7 @@ def normalize_bhav(df: pd.DataFrame) -> pd.DataFrame:
     out = df[KEEP_COLS].dropna(subset=["Date","Symbol"])
     return out
 
-# ---------------- Network latest (fast) ----------------
+# ---------- Network latest (fast) ----------
 def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
     ddmmyyyy = d.strftime("%d%m%Y"); DD, MON, YYYY = d.strftime("%d"), d.strftime("%b").upper(), d.strftime("%Y")
     urls = [
@@ -195,7 +188,7 @@ def fetch_latest_bhav_failfast() -> Dict[str, Any]:
             return {"ok": True, "date": res["date"], "rows": res["rows"], "df": res["df"], "tried": tried_all, "budget_s": int(time.time()-start)}
     return {"ok": False, "date": None, "rows": 0, "df": None, "tried": tried_all, "budget_s": int(time.time()-start)}
 
-# ---------------- Corporates (best-effort) ----------------
+# ---------- Corporates (best-effort) ----------
 def fetch_corporates_one(kind: str) -> Dict[str, Any]:
     s = session_fast()
     urls = (
@@ -293,12 +286,42 @@ def _num(v):
     try: return float(s)
     except: return None
 
-# ---------------- Local ingest with diagnostics ----------------
-BHAV_NAME_REGEX = re.compile(r'(sec[_-]?bhavdata[_-]?full|cm.*bhav|bhav_\d{8}|bhav_latest)\.csv$', re.IGNORECASE)
+# ---------- Local ingest (HEADER-based) ----------
+REQUIRED_ANY_DATE = {"Date","DATE","DATE1","Timestamp","TradeDate","TRADE_DATE"}
+REQUIRED_SYMBOL = {"Symbol","SYMBOL"}
+REQUIRED_SERIES = {"Series","SERIES"}
+HINT_COLS = {"Open","OPEN","OPEN_PRICE","High","HIGH","HIGH_PRICE","Low","LOW","LOW_PRICE",
+             "Close","CLOSE","CLOSE_PRICE","LAST_PRICE","PrevClose","PREV_CLOSE",
+             "TTL_TRD_QNTY","TOTTRDQTY","VOLUME","TURNOVER_LACS","TOTTRDVAL"}
+
+def looks_like_bhav_header(cols: List[str]) -> bool:
+    cset = set(cols)
+    has_date  = bool(cset & REQUIRED_ANY_DATE)
+    has_sym   = bool(cset & REQUIRED_SYMBOL)
+    has_series= bool(cset & REQUIRED_SERIES)
+    has_hint  = bool(cset & HINT_COLS)
+    return has_date and has_sym and has_series and has_hint
 
 def discover_local_bhav_files() -> List[str]:
-    return [p for p in sorted(set(glob.glob(os.path.join(PRICES_DIR, "*.csv"))))
-            if BHAV_NAME_REGEX.search(os.path.basename(p))]
+    out = []
+    for p in sorted(set(glob.glob(os.path.join(PRICES_DIR, "*.csv")))):
+        name = os.path.basename(p).lower()
+        if name == "bhav_hist.csv":   # never ingest our own hist
+            continue
+        # quick header peek
+        try:
+            head = pd.read_csv(p, nrows=1, dtype=str, skipinitialspace=True)
+            if looks_like_bhav_header(list(map(str, head.columns))):
+                out.append(p)
+        except Exception:
+            # try latin-1
+            try:
+                head = pd.read_csv(p, nrows=1, dtype=str, skipinitialspace=True, encoding="latin-1")
+                if looks_like_bhav_header(list(map(str, head.columns))):
+                    out.append(p)
+            except Exception:
+                continue
+    return out
 
 def ingest_local_bhav_candidates() -> Dict[str, Any]:
     files = discover_local_bhav_files()
@@ -316,18 +339,19 @@ def ingest_local_bhav_candidates() -> Dict[str, Any]:
     for path in files:
         entry = {"file": os.path.basename(path)}
         try:
-            # read tolerant
+            # tolerant read full
             try:
                 raw = pd.read_csv(path, dtype=str, skipinitialspace=True)
             except Exception:
                 raw = pd.read_csv(path, dtype=str, skipinitialspace=True, encoding="latin-1")
             entry["raw_rows"] = int(len(raw))
-            entry["raw_cols"] = list(map(str, list(raw.columns)[:10]))
+            entry["raw_cols"] = list(map(str, list(raw.columns)[:12]))
 
             df = normalize_bhav(raw)
             entry["norm_rows"] = int(len(df))
             entry["norm_null_date"] = int(df["Date"].isna().sum()) if "Date" in df.columns else None
             entry["norm_null_symbol"] = int(df["Symbol"].isna().sum()) if "Symbol" in df.columns else None
+
             if not df.empty:
                 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
                 # dedupe vs hist
@@ -367,7 +391,7 @@ def ingest_local_bhav_candidates() -> Dict[str, Any]:
     else:
         return {"used": False, "files": [], "added_rows": 0, "date": None, "reason": "no_matching_or_empty", "diagnostics": diag}
 
-# ---------------- Indicators ----------------
+# ---------- Indicators ----------
 def compute_indicators_and_latest(deliv_latest: Optional[pd.DataFrame]) -> Dict[str, Any]:
     try:
         hist = pd.read_csv(FILES["bhav_hist"])
@@ -419,9 +443,10 @@ def compute_indicators_and_latest(deliv_latest: Optional[pd.DataFrame]) -> Dict[
     atomic_write_df(latest[cols], FILES["tech_latest"])
     return {"ok": True, "rows": int(len(latest)), "last_date": last_date.strftime("%Y-%m-%d")}
 
-# ---------------- Main ----------------
+# ---------- Main ----------
 def main():
     ensure_dirs()
+    # headers
     ensure_headers(FILES["deliverables_latest"], ["Date","Symbol","Series","Deliverable_Qty","Traded_Qty","Delivery_Pct"])
     ensure_headers(FILES["deliverables_hist"],   ["Date","Symbol","Series","Deliverable_Qty","Traded_Qty","Delivery_Pct"])
     ensure_headers(FILES["bulk_latest"],         ["Date","Symbol","Client_Name","Buy_Sell","Quantity","Price","Source"])
@@ -455,7 +480,7 @@ def main():
             merged = merged[merged["Date"] >= cutoff].copy()
             atomic_write_df(merged.sort_values(["Date","Symbol"]).assign(Date=merged["Date"].dt.strftime("%Y-%m-%d")), FILES["bhav_hist"])
 
-    # 2) local ingest (diagnostic)
+    # 2) local ingest (header-driven)
     local_res = ingest_local_bhav_candidates()
 
     # current hist state
@@ -484,7 +509,7 @@ def main():
             allm = allm[allm["Date"] >= cutoff].copy()
             atomic_write_df(allm.assign(Date=allm["Date"].dt.strftime("%Y-%m-%d")), FILES["deliverables_hist"])
 
-    # 4) derive 52W
+    # 4) derive 52W (from hist)
     try:
         df = pd.read_csv(FILES["bhav_hist"])
         if not df.empty:
@@ -503,10 +528,10 @@ def main():
     except Exception:
         pass
 
-    # 5) indicators
-    tech_res = compute_indicators_and_latest(mto_res["df"] if mto_res.get("ok") else None)
+    # 5) indicators (latest-day slice)
+    tech_res = compute_indicators_and_latest(mto_res["df"] if locals().get("mto_res") and mto_res.get("ok") else None)
 
-    # 6) status
+    # 6) status (+ deep local diagnostics)
     local_debug = {
         "prices_dir_exists": os.path.isdir(PRICES_DIR),
         "csv_in_prices": sorted([os.path.basename(p) for p in glob.glob(os.path.join(PRICES_DIR, "*.csv"))]),
@@ -525,7 +550,7 @@ def main():
                           "last_date": None if new_last_date is None else new_last_date.strftime("%Y-%m-%d")},
             "bulk": {"ok": bool(bulk_res["ok"]), "rows": bulk_res.get("rows", 0)},
             "block": {"ok": bool(block_res["ok"]), "rows": block_res.get("rows", 0)},
-            "deliverables": {"ok": bool(mto_res["ok"]), "rows": mto_res.get("rows", 0)},
+            "deliverables": {"ok": bool(mto_res.get("ok", False)), "rows": mto_res.get("rows", 0) if locals().get("mto_res") else 0},
             "tech_latest": tech_res,
         },
         "debug": {
