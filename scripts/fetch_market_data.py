@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-StakeLens Option A — Small, Fast, Daily Append (header-driven local ingest)
-- Network try (tiny budget). OK if it fails.
-- Robust local ingest from data/prices/ by HEADER SHAPE, not filename:
+StakeLens Option A — Small, Fast, Daily Append (header-driven local ingest with BOM/Unicode sanitation)
+- Tiny network try (OK if it fails).
+- Robust local ingest from data/prices/ by HEADER SHAPE (not filename):
     accepts bhav-style CSVs (SYMBOL/SERIES + DATE/DATE1 + price/volume cols)
-- Tolerant normalization (skip-initial-space, dtype=str, multi-format date parsing).
+- Header sanitation: trims spaces, removes BOM/unicode noise, keeps only [a-z0-9_], then maps to canonical.
 - Append into data/prices/bhav_hist.csv (de-dup by Date+Symbol; rolling window).
 - Derive data/highlow_52w.csv and data/tech_latest.csv.
-- Write data/fetch_status.json with deep diagnostics (including per-file ingest stats).
+- Write data/fetch_status.json with deep diagnostics (per-file ingest stats).
 """
 
 from __future__ import annotations
-import os, io, json, zipfile, time, glob
+import os, io, json, zipfile, time, glob, re
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
@@ -90,7 +90,7 @@ def session_fast() -> requests.Session:
 
 # ---------- Normalization ----------
 CANON = {
-    "date": "Date", "timestamp": "Date", "date1": "Date", "tradedate": "Date", "traded_date": "Date",
+    "date": "Date", "timestamp": "Date", "date1": "Date", "tradedate": "Date", "trade_date": "Date", "traded_date": "Date",
     "symbol": "Symbol", "series": "Series",
     "open": "Open", "open_price": "Open",
     "high": "High", "high_price": "High",
@@ -101,6 +101,16 @@ CANON = {
     "turnover": "Turnover", "tottrdval": "Turnover", "turnover_lacs": "Turnover",
 }
 KEEP_COLS = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"]
+
+_SANITIZE_RE = re.compile(r"[^a-z0-9_]+")
+
+def _clean_col(name: str) -> str:
+    # strip spaces, BOM, punctuation, lowercase, collapse underscores
+    key = str(name).replace("\ufeff","").strip().lower()
+    key = key.replace("-", "_").replace(" ", "_")
+    key = _SANITIZE_RE.sub("_", key)
+    key = re.sub(r"_+", "_", key).strip("_")
+    return key
 
 def _parse_date_series(s: pd.Series) -> pd.Series:
     d = pd.to_datetime(s, errors="coerce")
@@ -114,24 +124,28 @@ def normalize_bhav(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame(columns=KEEP_COLS)
     df = df.copy()
-    # normalize headers: strip → lower → replace spaces/dashes → map via CANON
-    new_cols = []
+
+    # sanitize headers then map to canonical
+    canon_cols = []
     for c in df.columns:
-        key = str(c).strip().lower().replace(" ", "_").replace("-", "_")
-        new_cols.append(CANON.get(key, str(c).strip()))
-    df.columns = new_cols
-    # ensure required cols
+        key = _clean_col(c)
+        canon_cols.append(CANON.get(key, str(c).strip()))
+    df.columns = canon_cols
+
+    # ensure required columns exist
     for k in KEEP_COLS:
-        if k not in df.columns: df[k] = None
-    # clean
+        if k not in df.columns:
+            df[k] = None
+
+    # clean & coerce
     df["Symbol"] = df["Symbol"].astype(str).str.upper().str.strip()
     df["Series"] = df["Series"].astype(str).str.upper().str.strip()
-    # date
     dts = _parse_date_series(df["Date"])
     df["Date"] = dts.dt.strftime("%Y-%m-%d")
-    # numerics
+
     for c in ["Open","High","Low","Close","PrevClose","Volume","Turnover"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+
     out = df[KEEP_COLS].dropna(subset=["Date","Symbol"])
     return out
 
@@ -287,40 +301,39 @@ def _num(v):
     except: return None
 
 # ---------- Local ingest (HEADER-based) ----------
-REQUIRED_ANY_DATE = {"Date","DATE","DATE1","Timestamp","TradeDate","TRADE_DATE"}
-REQUIRED_SYMBOL = {"Symbol","SYMBOL"}
-REQUIRED_SERIES = {"Series","SERIES"}
-HINT_COLS = {"Open","OPEN","OPEN_PRICE","High","HIGH","HIGH_PRICE","Low","LOW","LOW_PRICE",
-             "Close","CLOSE","CLOSE_PRICE","LAST_PRICE","PrevClose","PREV_CLOSE",
-             "TTL_TRD_QNTY","TOTTRDQTY","VOLUME","TURNOVER_LACS","TOTTRDVAL"}
+REQUIRED_ANY_DATE = {"date","date1","timestamp","tradedate","trade_date","traded_date"}
+REQUIRED_SYMBOL   = {"symbol"}
+REQUIRED_SERIES   = {"series"}
+HINT_COLS = {"open","open_price","high","high_price","low","low_price",
+             "close","close_price","last_price","prevclose","prev_close",
+             "ttl_trd_qnty","tottrdqty","volume","turnover_lacs","tottrdval"}
+
+def _sanitize_cols(cols: List[str]) -> List[str]:
+    return [_clean_col(c) for c in cols]
 
 def looks_like_bhav_header(cols: List[str]) -> bool:
-    cset = set(cols)
-    has_date  = bool(cset & REQUIRED_ANY_DATE)
-    has_sym   = bool(cset & REQUIRED_SYMBOL)
-    has_series= bool(cset & REQUIRED_SERIES)
-    has_hint  = bool(cset & HINT_COLS)
-    return has_date and has_sym and has_series and has_hint
+    s = set(_sanitize_cols(cols))
+    has_date   = bool(s & REQUIRED_ANY_DATE)
+    has_symbol = bool(s & REQUIRED_SYMBOL)
+    has_series = bool(s & REQUIRED_SERIES)
+    has_hint   = bool(s & HINT_COLS)
+    return has_date and has_symbol and has_series and has_hint
 
 def discover_local_bhav_files() -> List[str]:
     out = []
     for p in sorted(set(glob.glob(os.path.join(PRICES_DIR, "*.csv")))):
         name = os.path.basename(p).lower()
-        if name == "bhav_hist.csv":   # never ingest our own hist
+        if name == "bhav_hist.csv":
             continue
-        # quick header peek
         try:
             head = pd.read_csv(p, nrows=1, dtype=str, skipinitialspace=True)
-            if looks_like_bhav_header(list(map(str, head.columns))):
-                out.append(p)
         except Exception:
-            # try latin-1
             try:
                 head = pd.read_csv(p, nrows=1, dtype=str, skipinitialspace=True, encoding="latin-1")
-                if looks_like_bhav_header(list(map(str, head.columns))):
-                    out.append(p)
             except Exception:
                 continue
+        if looks_like_bhav_header(list(map(str, head.columns))):
+            out.append(p)
     return out
 
 def ingest_local_bhav_candidates() -> Dict[str, Any]:
@@ -480,7 +493,7 @@ def main():
             merged = merged[merged["Date"] >= cutoff].copy()
             atomic_write_df(merged.sort_values(["Date","Symbol"]).assign(Date=merged["Date"].dt.strftime("%Y-%m-%d")), FILES["bhav_hist"])
 
-    # 2) local ingest (header-driven)
+    # 2) local ingest (header-driven, sanitized)
     local_res = ingest_local_bhav_candidates()
 
     # current hist state
