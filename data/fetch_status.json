@@ -1,12 +1,18 @@
 {
   "ok": true,
-  "when_ist": "2025-11-03T09:57:08.927863+05:30",
+  "when_ist": "2025-11-03T11:47:10.011045+05:30",
   "steps": {
     "bhav": {
       "ok": false,
       "date": null,
       "rows": 0,
       "budget_s": 7
+    },
+    "local_bhav": {
+      "used": false,
+      "rows": 0,
+      "date": null,
+      "reason": "local_empty"
     },
     "bhav_hist": {
       "rows": 0,
@@ -15,11 +21,11 @@
     },
     "bulk": {
       "ok": true,
-      "rows": 1
+      "rows": 3
     },
     "block": {
       "ok": true,
-      "rows": 1
+      "rows": 3
     },
     "deliverables": {
       "ok": false,
