@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-StakeLens Option A — Small, Fast, Daily Append
-- Fetch ONLY the latest trading day's bhav (fail fast).
+StakeLens Option A — Small, Fast, Daily Append (with local fallback)
+- Try to fetch ONLY the latest trading day's bhav (fail fast; tiny budget).
+- ALSO auto-ingest data/prices/bhav_latest.csv if it exists & is newer than hist.
 - Append into data/prices/bhav_hist.csv (keep last-good).
 - Derive data/highlow_52w.csv, compute data/tech_latest.csv.
 - Bulk/Block/MTO best-effort with tight timeouts (no stalls).
-- Write data/fetch_status.json with observability for staleness guard.
+- Write data/fetch_status.json with observability and staleness guard.
 
 Zero-budget, autopilot, robust-by-simplicity.
 """
@@ -34,12 +35,13 @@ FILES = {
     "hi52w":               os.path.join(DATA_DIR, "highlow_52w.csv"),
     "bhav_hist":           os.path.join(PRICES_DIR, "bhav_hist.csv"),
     "tech_latest":         os.path.join(DATA_DIR, "tech_latest.csv"),
+    "bhav_latest":         os.path.join(PRICES_DIR, "bhav_latest.csv"),  # <- local fallback
 }
 
 # Tight budgets (fail fast)
-HTTP_TIMEOUT = 8          # seconds per request
+HTTP_TIMEOUT = 8          # seconds per HTTP request
 HTTP_RETRIES = 1          # minimal retries
-TOTAL_BHAV_BUDGET = 45    # seconds budget to fetch latest bhav (overall)
+TOTAL_BHAV_BUDGET = 45    # seconds to attempt latest bhav overall
 CORP_TIMEOUT = 6          # per corporates request
 
 # ---------------- Utils ----------------
@@ -72,14 +74,13 @@ def prev_biz_days(n: int, ref: Optional[datetime]=None) -> List[datetime]:
     return out
 
 def biz_age_days(from_date: datetime, to_date: Optional[datetime]=None) -> int:
-    """Approx weekday-only gap; used for staleness guard."""
     to_date = to_date or now_ist_dt()
     d, cnt = from_date, 0
     step = timedelta(days=1)
     while d.date() < to_date.date():
         d += step
         if not is_weekend(d): cnt += 1
-        if cnt > 10_000: break
+        if cnt > 10000: break
     return cnt
 
 # ---------------- HTTP ----------------
@@ -125,9 +126,8 @@ def normalize_bhav(df: pd.DataFrame) -> pd.DataFrame:
     df["Series"] = df["Series"].astype(str).str.upper().str.strip()
     return df.dropna(subset=["Date","Symbol","Close"])
 
-# ---------------- Fetch latest bhav (fail-fast) ----------------
+# ---------------- Latest bhav (fast) ----------------
 def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
-    """Return {'ok':bool,'date':'YYYY-MM-DD','rows':int,'df':DataFrame|None,'tried':[urls...] }"""
     ddmmyyyy = d.strftime("%d%m%Y")
     DD, MON, YYYY = d.strftime("%d"), d.strftime("%b").upper(), d.strftime("%Y")
     urls = [
@@ -137,8 +137,7 @@ def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
         f"http://archives.nseindia.com/content/historical/EQUITIES/{YYYY}/{MON}/cm{DD}{MON}{YYYY}bhav.csv.zip",
     ]
     tried = []
-    # CSV first
-    for u in urls[:2]:
+    for u in urls[:2]:  # CSV first
         tried.append(u)
         try:
             r = s.get(u, timeout=HTTP_TIMEOUT, headers={"Referer":"https://www.nseindia.com/market-data"})
@@ -150,8 +149,7 @@ def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
                     return {"ok": True, "date": day, "rows": int(len(out)), "df": out, "tried": tried}
         except Exception:
             pass
-    # ZIP fallback
-    for u in urls[2:]:
+    for u in urls[2:]:      # ZIP fallback
         tried.append(u)
         try:
             r = s.get(u, timeout=HTTP_TIMEOUT, headers={"Referer":"https://www.nseindia.com/market-data"})
@@ -170,19 +168,13 @@ def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
     return {"ok": False, "date": d.strftime("%Y-%m-%d"), "rows": 0, "df": None, "tried": tried}
 
 def fetch_latest_bhav_failfast() -> Dict[str, Any]:
-    """Try Today IST, else previous biz day, else one more back—bounded by TOTAL_BHAV_BUDGET."""
     start = time.time()
     s = session_fast()
-    candidates = []
-    today = now_ist_dt()
-    # Try today first (post close), then the last 2 business days
-    candidates.append(today)
-    candidates.extend(prev_biz_days(2, ref=today))
+    candidates = [now_ist_dt()] + prev_biz_days(2)  # today, then last 2 biz days
     tried_all = []
     for d in candidates:
         if is_weekend(d): continue
-        if time.time() - start > TOTAL_BHAV_BUDGET:
-            break
+        if time.time() - start > TOTAL_BHAV_BUDGET: break
         res = try_fetch_bhav_for_date(s, d)
         tried_all.extend(res.get("tried", []))
         if res["ok"]:
@@ -191,7 +183,6 @@ def fetch_latest_bhav_failfast() -> Dict[str, Any]:
 
 # ---------------- Corporates (best-effort) ----------------
 def fetch_corporates_one(kind: str) -> Dict[str, Any]:
-    """Best-effort, tight timeouts, returns rows or 0; never stalls."""
     s = session_fast()
     urls = (
         ["https://www.nseindia.com/api/corporates-bulk-deals?index=equities",
@@ -244,7 +235,6 @@ def fetch_corporates_one(kind: str) -> Dict[str, Any]:
     return {"ok": False, "rows": 0, "df": None, "tried": tried}
 
 def fetch_mto_latest() -> Dict[str, Any]:
-    """Best-effort MTO (deliverables) for the most recent few business days."""
     s = session_fast()
     rec = None; tried=[]
     for d in [now_ist_dt()] + prev_biz_days(6):
@@ -277,7 +267,6 @@ def fetch_mto_latest() -> Dict[str, Any]:
         if len(parts) < 3: continue
         symbol = parts[0].upper().strip()
         series = parts[1].upper().strip()
-        # naive best-effort numeric picks
         numeric = [p for p in parts if any(ch.isdigit() for ch in p)]
         dq, tq, pct = None, None, None
         for p in numeric:
@@ -285,8 +274,7 @@ def fetch_mto_latest() -> Dict[str, Any]:
         if len(numeric) >= 2:
             tq = numeric[-1]
             dq = numeric[-2]
-        rows.append([d.strftime("%Y-%m-%d"), symbol, series,
-                     _num(dq), _num(tq), _num(pct)])
+        rows.append([d.strftime("%Y-%m-%d"), symbol, series, _num(dq), _num(tq), _num(pct)])
     if not rows: return {"ok": False, "rows": 0, "tried": tried}
     df = pd.DataFrame(rows, columns=["Date","Symbol","Series","Deliverable_Qty","Traded_Qty","Delivery_Pct"])
     return {"ok": True, "rows": int(len(df)), "df": df, "tried": tried}
@@ -296,6 +284,35 @@ def _num(v):
     s = str(v).replace(",","").replace("%","").strip()
     try: return float(s)
     except: return None
+
+# ---------------- Local fallback ingest ----------------
+def ingest_local_bhav_if_new() -> Dict[str, Any]:
+    """If data/prices/bhav_latest.csv exists and is newer than hist, merge it."""
+    if not os.path.exists(FILES["bhav_latest"]):
+        return {"used": False, "rows": 0, "date": None, "reason": "no_local_file"}
+    try:
+        df = pd.read_csv(FILES["bhav_latest"])
+        df = normalize_bhav(df)
+        if df.empty: return {"used": False, "rows": 0, "date": None, "reason": "local_empty"}
+        local_date = pd.to_datetime(df["Date"]).max()
+        try:
+            hist = pd.read_csv(FILES["bhav_hist"])
+        except Exception:
+            hist = pd.DataFrame(columns=df.columns)
+        hist_last = pd.to_datetime(hist["Date"]).max() if not hist.empty else None
+        if (hist_last is None) or (local_date > hist_last):
+            merged = (pd.concat([hist, df], ignore_index=True)
+                        .drop_duplicates(subset=["Date","Symbol"], keep="last"))
+            merged["Date"] = pd.to_datetime(merged["Date"])
+            cutoff = merged["Date"].max() - timedelta(days=460)
+            merged = merged[merged["Date"] >= cutoff].copy()
+            atomic_write_df(merged.sort_values(["Date","Symbol"]).assign(Date=merged["Date"].dt.strftime("%Y-%m-%d")),
+                            FILES["bhav_hist"])
+            return {"used": True, "rows": int(len(df)), "date": local_date.strftime("%Y-%m-%d"), "reason": "local_newer"}
+        else:
+            return {"used": False, "rows": int(len(df)), "date": local_date.strftime("%Y-%m-%d"), "reason": "local_not_newer"}
+    except Exception as e:
+        return {"used": False, "rows": 0, "date": None, "reason": f"error:{e}"}
 
 # ---------------- Indicators ----------------
 def compute_indicators_and_latest(deliv_latest: Optional[pd.DataFrame]) -> Dict[str, Any]:
@@ -363,7 +380,7 @@ def main():
                                                   "Range","TR","ATR14","SMA10","SMA20","SMA50","BB_Mid","BB_Upper","BB_Lower",
                                                   "BB_Bandwidth","CLV","RangeAvg20","VolAvg20","HI55","HI55_Recent","NR7","Delivery_Pct"])
 
-    # Load existing hist last date (for staleness diff)
+    # Hist last date (for staleness)
     prev_last_date = None
     try:
         hh = pd.read_csv(FILES["bhav_hist"])
@@ -372,35 +389,23 @@ def main():
     except Exception:
         pass
 
-    # 1) Fetch latest bhav (strict budget)
+    # 1) Network attempt (strict budget)
     bhav_res = fetch_latest_bhav_failfast()
-    hist_rows_after = 0
-    new_last_date = prev_last_date
 
-    if bhav_res["ok"]:
-        # Append/merge with existing hist (cap to 460d)
-        new_day = bhav_res["df"]
-        try:
-            hist = pd.read_csv(FILES["bhav_hist"])
-        except Exception:
-            hist = pd.DataFrame(columns=new_day.columns)
-        allb = pd.concat([hist, new_day], ignore_index=True).drop_duplicates(subset=["Date","Symbol"], keep="last")
-        if not allb.empty:
-            allb["Date"] = pd.to_datetime(allb["Date"])
-            cutoff = allb["Date"].max() - timedelta(days=460)
-            allb = allb[allb["Date"] >= cutoff].copy()
-            atomic_write_df(allb.sort_values(["Date","Symbol"]).assign(Date=allb["Date"].dt.strftime("%Y-%m-%d")), FILES["bhav_hist"])
-            hist_rows_after = int(len(allb))
-            new_last_date = allb["Date"].max()
-    else:
-        # keep last-good hist as-is
-        try:
-            hist = pd.read_csv(FILES["bhav_hist"])
+    # 2) Local fallback (always attempt; it only writes if newer)
+    local_res = ingest_local_bhav_if_new()
+
+    # Determine new hist state
+    hist_rows_after = 0; new_last_date = prev_last_date
+    try:
+        hist = pd.read_csv(FILES["bhav_hist"])
+        if not hist.empty:
             hist_rows_after = int(len(hist))
-        except Exception:
-            hist_rows_after = 0
+            new_last_date = pd.to_datetime(hist["Date"]).max()
+    except Exception:
+        pass
 
-    # 2) Corporates best-effort (won't stall)
+    # 3) Corporates (best-effort)
     bulk_res  = fetch_corporates_one("bulk")
     if bulk_res["ok"]: atomic_write_df(bulk_res["df"], FILES["bulk_latest"])
     block_res = fetch_corporates_one("block")
@@ -408,7 +413,6 @@ def main():
     mto_res   = fetch_mto_latest()
     if mto_res["ok"]:
         atomic_write_df(mto_res["df"], FILES["deliverables_latest"])
-        # keep rolling 120d MTO hist
         try: mh = pd.read_csv(FILES["deliverables_hist"])
         except Exception: mh = pd.DataFrame(columns=mto_res["df"].columns)
         allm = pd.concat([mh, mto_res["df"]], ignore_index=True).drop_duplicates(subset=["Date","Symbol","Series"], keep="last")
@@ -417,7 +421,7 @@ def main():
             allm = allm[allm["Date"] >= cutoff].copy()
             atomic_write_df(allm.assign(Date=allm["Date"].dt.strftime("%Y-%m-%d")), FILES["deliverables_hist"])
 
-    # 3) Derive 52W
+    # 4) Derive 52W (from hist)
     try:
         df = pd.read_csv(FILES["bhav_hist"])
         if not df.empty:
@@ -436,16 +440,17 @@ def main():
     except Exception:
         pass
 
-    # 4) Indicators
+    # 5) Indicators (latest-day slice)
     tech_res = compute_indicators_and_latest(mto_res["df"] if mto_res.get("ok") else None)
 
-    # 5) Status + staleness hint
+    # 6) Status + staleness
     status = {
         "ok": True,
         "when_ist": now_ist_iso(),
         "steps": {
-            "bhav": {"ok": bool(bhav_res["ok"]), "date": bhav_res.get("date"), "rows": bhav_res.get("rows", 0),
-                     "budget_s": bhav_res.get("budget_s", 0)},
+            "bhav": {"ok": bool(bhav_res["ok"]), "date": bhav_res.get("date"),
+                     "rows": bhav_res.get("rows", 0), "budget_s": bhav_res.get("budget_s", 0)},
+            "local_bhav": local_res,
             "bhav_hist": {"rows": hist_rows_after,
                           "prev_last_date": None if prev_last_date is None else prev_last_date.strftime("%Y-%m-%d"),
                           "last_date": None if new_last_date is None else new_last_date.strftime("%Y-%m-%d")},
@@ -454,17 +459,10 @@ def main():
             "deliverables": {"ok": bool(mto_res["ok"]), "rows": mto_res.get("rows", 0)},
             "tech_latest": tech_res,
         },
-        "debug": {
-            "bhav_urls_tried": bhav_res.get("tried", [])[:50]
-        }
+        "debug": { "bhav_urls_tried": bhav_res.get("tried", [])[:50] }
     }
-
-    # staleness: 2+ business days without advance
-    stale = False
-    if new_last_date is None:
-        stale = True  # never had hist
-    else:
-        # if we failed bhav today and last_date is older than 2 biz days
+    stale = True
+    if new_last_date is not None:
         age = biz_age_days(new_last_date)
         stale = age >= 2
     status["stale_2biz_days"] = bool(stale)
