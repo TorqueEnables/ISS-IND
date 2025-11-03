@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-StakeLens Option A — Small, Fast, Daily Append (with local fallback)
+StakeLens Option A — Small, Fast, Daily Append (robust local ingest)
 - Try to fetch ONLY the latest trading day's bhav (fail fast; tiny budget).
-- ALSO auto-ingest data/prices/bhav_latest.csv if it exists & is newer than hist.
-- Append into data/prices/bhav_hist.csv (keep last-good).
+- ALSO auto-ingest any local CSVs in data/prices/:
+    * sec_bhavdata_full_*.csv
+    * cm*bhav*.csv
+    * bhav_latest.csv
+- Append into data/prices/bhav_hist.csv (keep last-good; de-dup).
 - Derive data/highlow_52w.csv, compute data/tech_latest.csv.
 - Bulk/Block/MTO best-effort with tight timeouts (no stalls).
 - Write data/fetch_status.json with observability and staleness guard.
-
-Zero-budget, autopilot, robust-by-simplicity.
 """
 
 from __future__ import annotations
-import os, io, json, zipfile, time
+import os, io, json, zipfile, time, glob
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
@@ -35,7 +36,6 @@ FILES = {
     "hi52w":               os.path.join(DATA_DIR, "highlow_52w.csv"),
     "bhav_hist":           os.path.join(PRICES_DIR, "bhav_hist.csv"),
     "tech_latest":         os.path.join(DATA_DIR, "tech_latest.csv"),
-    "bhav_latest":         os.path.join(PRICES_DIR, "bhav_latest.csv"),  # <- local fallback
 }
 
 # Tight budgets (fail fast)
@@ -104,27 +104,65 @@ def session_fast() -> requests.Session:
     return s
 
 # ---------------- Normalization ----------------
+CANON = {
+    # date
+    "date": "Date", "timestamp": "Date", "date1": "Date", "tradedate": "Date", "traded_date": "Date",
+
+    # symbol / series
+    "symbol": "Symbol", "series": "Series",
+
+    # open/high/low/close variants
+    "open": "Open", "open_price": "Open",
+    "high": "High", "high_price": "High",
+    "low":  "Low",  "low_price":  "Low",
+    "close": "Close", "close_price": "Close", "last_price": "Close",
+
+    # prev close variants
+    "prevclose": "PrevClose", "prev_close": "PrevClose", "previousclose": "PrevClose", "previous_close": "PrevClose",
+
+    # volume variants
+    "volume": "Volume", "tottrdqty": "Volume", "ttl_trd_qnty": "Volume", "totaltradedquantity": "Volume",
+
+    # turnover variants
+    "turnover": "Turnover", "tottrdval": "Turnover", "turnover_lacs": "Turnover",
+}
+
+KEEP_COLS = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"]
+
 def normalize_bhav(df: pd.DataFrame) -> pd.DataFrame:
-    canon = {
-        "date":"Date","timestamp":"Date",
-        "symbol":"Symbol","series":"Series",
-        "open":"Open","high":"High","low":"Low","close":"Close",
-        "prevclose":"PrevClose","prev_close":"PrevClose","previousclose":"PrevClose",
-        "volume":"Volume","tottrdqty":"Volume",
-        "turnover":"Turnover","tottrdval":"Turnover","turnover_lacs":"Turnover"
-    }
+    if df is None or df.empty:
+        return pd.DataFrame(columns=KEEP_COLS)
+
+    # make a safe copy and rename columns using CANON (case-insensitive)
     df = df.copy()
-    df.columns = [canon.get(c.strip().lower(), c.strip()) for c in df.columns]
-    keep = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"]
-    for k in keep:
-        if k not in df.columns: df[k] = None
-    df = df[keep]
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.strftime("%Y-%m-%d")
-    for c in ["Open","High","Low","Close","PrevClose","Volume","Turnover"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+    new_cols = []
+    for c in df.columns:
+        key = c.strip().lower()
+        key = key.replace(" ", "_").replace("-", "_")
+        new_cols.append(CANON.get(key, c.strip()))
+    df.columns = new_cols
+
+    # If key columns missing, try to fill from close/last_price, etc.
+    for k in KEEP_COLS:
+        if k not in df.columns:
+            df[k] = None
+
+    # Cast/clean
     df["Symbol"] = df["Symbol"].astype(str).str.upper().str.strip()
     df["Series"] = df["Series"].astype(str).str.upper().str.strip()
-    return df.dropna(subset=["Date","Symbol","Close"])
+
+    # Date normalization (DATE1, TIMESTAMP, etc.)
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.strftime("%Y-%m-%d")
+
+    # Numeric casts
+    for c in ["Open","High","Low","Close","PrevClose","Volume","Turnover"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # Keep only standard columns in the right order
+    out = df[KEEP_COLS].dropna(subset=["Date","Symbol"])
+    # If Close is missing but Open or Last existed, keep row; indicators will handle NaNs gracefully
+    return out
 
 # ---------------- Latest bhav (fast) ----------------
 def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
@@ -137,7 +175,8 @@ def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
         f"http://archives.nseindia.com/content/historical/EQUITIES/{YYYY}/{MON}/cm{DD}{MON}{YYYY}bhav.csv.zip",
     ]
     tried = []
-    for u in urls[:2]:  # CSV first
+    # CSV first
+    for u in urls[:2]:
         tried.append(u)
         try:
             r = s.get(u, timeout=HTTP_TIMEOUT, headers={"Referer":"https://www.nseindia.com/market-data"})
@@ -145,11 +184,12 @@ def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
                 df = pd.read_csv(io.StringIO(r.text))
                 out = normalize_bhav(df)
                 if not out.empty:
-                    day = out["Date"].iloc[0]
+                    day = out["Date"].dropna().iloc[0]
                     return {"ok": True, "date": day, "rows": int(len(out)), "df": out, "tried": tried}
         except Exception:
             pass
-    for u in urls[2:]:      # ZIP fallback
+    # ZIP fallback
+    for u in urls[2:]:
         tried.append(u)
         try:
             r = s.get(u, timeout=HTTP_TIMEOUT, headers={"Referer":"https://www.nseindia.com/market-data"})
@@ -161,7 +201,7 @@ def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
             df = pd.read_csv(io.StringIO(raw))
             out = normalize_bhav(df)
             if not out.empty:
-                day = out["Date"].iloc[0]
+                day = out["Date"].dropna().iloc[0]
                 return {"ok": True, "date": day, "rows": int(len(out)), "df": out, "tried": tried}
         except Exception:
             pass
@@ -170,7 +210,7 @@ def try_fetch_bhav_for_date(s: requests.Session, d: datetime) -> Dict[str, Any]:
 def fetch_latest_bhav_failfast() -> Dict[str, Any]:
     start = time.time()
     s = session_fast()
-    candidates = [now_ist_dt()] + prev_biz_days(2)  # today, then last 2 biz days
+    candidates = [now_ist_dt()] + prev_biz_days(2)  # today + last 2 biz days
     tried_all = []
     for d in candidates:
         if is_weekend(d): continue
@@ -274,7 +314,8 @@ def fetch_mto_latest() -> Dict[str, Any]:
         if len(numeric) >= 2:
             tq = numeric[-1]
             dq = numeric[-2]
-        rows.append([d.strftime("%Y-%m-%d"), symbol, series, _num(dq), _num(tq), _num(pct)])
+        rows.append([d.strftime("%Y-%m-%d"), symbol, series,
+                     _num(dq), _num(tq), _num(pct)])
     if not rows: return {"ok": False, "rows": 0, "tried": tried}
     df = pd.DataFrame(rows, columns=["Date","Symbol","Series","Deliverable_Qty","Traded_Qty","Delivery_Pct"])
     return {"ok": True, "rows": int(len(df)), "df": df, "tried": tried}
@@ -285,191 +326,7 @@ def _num(v):
     try: return float(s)
     except: return None
 
-# ---------------- Local fallback ingest ----------------
-def ingest_local_bhav_if_new() -> Dict[str, Any]:
-    """If data/prices/bhav_latest.csv exists and is newer than hist, merge it."""
-    if not os.path.exists(FILES["bhav_latest"]):
-        return {"used": False, "rows": 0, "date": None, "reason": "no_local_file"}
-    try:
-        df = pd.read_csv(FILES["bhav_latest"])
-        df = normalize_bhav(df)
-        if df.empty: return {"used": False, "rows": 0, "date": None, "reason": "local_empty"}
-        local_date = pd.to_datetime(df["Date"]).max()
-        try:
-            hist = pd.read_csv(FILES["bhav_hist"])
-        except Exception:
-            hist = pd.DataFrame(columns=df.columns)
-        hist_last = pd.to_datetime(hist["Date"]).max() if not hist.empty else None
-        if (hist_last is None) or (local_date > hist_last):
-            merged = (pd.concat([hist, df], ignore_index=True)
-                        .drop_duplicates(subset=["Date","Symbol"], keep="last"))
-            merged["Date"] = pd.to_datetime(merged["Date"])
-            cutoff = merged["Date"].max() - timedelta(days=460)
-            merged = merged[merged["Date"] >= cutoff].copy()
-            atomic_write_df(merged.sort_values(["Date","Symbol"]).assign(Date=merged["Date"].dt.strftime("%Y-%m-%d")),
-                            FILES["bhav_hist"])
-            return {"used": True, "rows": int(len(df)), "date": local_date.strftime("%Y-%m-%d"), "reason": "local_newer"}
-        else:
-            return {"used": False, "rows": int(len(df)), "date": local_date.strftime("%Y-%m-%d"), "reason": "local_not_newer"}
-    except Exception as e:
-        return {"used": False, "rows": 0, "date": None, "reason": f"error:{e}"}
-
-# ---------------- Indicators ----------------
-def compute_indicators_and_latest(deliv_latest: Optional[pd.DataFrame]) -> Dict[str, Any]:
-    try:
-        hist = pd.read_csv(FILES["bhav_hist"])
-    except Exception:
-        hist = pd.DataFrame(columns=["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"])
-    if hist.empty:
-        ensure_headers(FILES["tech_latest"], ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume",
-                                              "Range","TR","ATR14","SMA10","SMA20","SMA50","BB_Mid","BB_Upper","BB_Lower",
-                                              "BB_Bandwidth","CLV","RangeAvg20","VolAvg20","HI55","HI55_Recent","NR7","Delivery_Pct"])
-        return {"ok": False, "rows": 0, "note": "hist empty"}
-
-    df = hist.copy()
-    df["Date"] = pd.to_datetime(df["Date"]); df = df.sort_values(["Symbol","Date"])
-    df["Range"] = df["High"] - df["Low"]
-    tr1 = df["Range"]; tr2 = (df["High"] - df["PrevClose"]).abs(); tr3 = (df["Low"] - df["PrevClose"]).abs()
-    df["TR"] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    g = df.groupby("Symbol", group_keys=False)
-    df["ATR14"] = g["TR"].rolling(14, min_periods=14).mean().reset_index(level=0, drop=True)
-    df["SMA10"] = g["Close"].rolling(10, min_periods=10).mean().reset_index(level=0, drop=True)
-    df["SMA20"] = g["Close"].rolling(20, min_periods=20).mean().reset_index(level=0, drop=True)
-    df["SMA50"] = g["Close"].rolling(50, min_periods=50).mean().reset_index(level=0, drop=True)
-    std20 = g["Close"].rolling(20, min_periods=20).std(ddof=0).reset_index(level=0, drop=True)
-    df["BB_Mid"] = df["SMA20"]; df["BB_Upper"] = df["BB_Mid"] + 2*std20; df["BB_Lower"] = df["BB_Mid"] - 2*std20
-    df["BB_Bandwidth"] = (df["BB_Upper"] - df["BB_Lower"]) / df["BB_Mid"]
-    df["CLV"] = 0.5
-    nz = (df["High"] != df["Low"])
-    df.loc[nz, "CLV"] = (df.loc[nz, "Close"] - df.loc[nz, "Low"]) / (df.loc[nz, "High"] - df.loc[nz, "Low"])
-    df["RangeAvg20"] = g["Range"].rolling(20, min_periods=20).mean().reset_index(level=0, drop=True)
-    df["VolAvg20"] = g["Volume"].rolling(20, min_periods=20).mean().reset_index(level=0, drop=True)
-    roll_hi55 = g["High"].rolling(55, min_periods=55).max().reset_index(level=0, drop=True)
-    df["HI55"] = (df["High"] == roll_hi55)
-    df["HI55_Recent"] = g["HI55"].rolling(5, min_periods=1).max().reset_index(level=0, drop=True).astype(bool)
-    rng7min = g["Range"].rolling(7, min_periods=7).min().reset_index(level=0, drop=True)
-    df["NR7"] = (df["Range"] == rng7min)
-
-    last_date = df["Date"].max()
-    latest = df[df["Date"] == last_date].copy()
-    if deliv_latest is not None and not deliv_latest.empty:
-        dl = deliv_latest.copy()
-        dl["Date"] = pd.to_datetime(dl["Date"])
-        dl = dl[dl["Date"] == last_date][["Symbol","Delivery_Pct"]]
-        latest = latest.merge(dl, on="Symbol", how="left")
-    else:
-        latest["Delivery_Pct"] = None
-
-    cols = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume",
-            "Range","TR","ATR14","SMA10","SMA20","SMA50","BB_Mid","BB_Upper","BB_Lower",
-            "BB_Bandwidth","CLV","RangeAvg20","VolAvg20","HI55","HI55_Recent","NR7","Delivery_Pct"]
-    atomic_write_df(latest[cols], FILES["tech_latest"])
-    return {"ok": True, "rows": int(len(latest)), "last_date": last_date.strftime("%Y-%m-%d")}
-
-# ---------------- Main ----------------
-def main():
-    ensure_dirs()
-    # Ensure stable headers first
-    ensure_headers(FILES["deliverables_latest"], ["Date","Symbol","Series","Deliverable_Qty","Traded_Qty","Delivery_Pct"])
-    ensure_headers(FILES["deliverables_hist"],   ["Date","Symbol","Series","Deliverable_Qty","Traded_Qty","Delivery_Pct"])
-    ensure_headers(FILES["bulk_latest"],         ["Date","Symbol","Client_Name","Buy_Sell","Quantity","Price","Source"])
-    ensure_headers(FILES["block_latest"],        ["Date","Symbol","Client_Name","Buy_Sell","Quantity","Price","Source"])
-    ensure_headers(FILES["hi52w"],               ["Symbol","High52W","High52W_Date","Low52W","Low52W_Date"])
-    ensure_headers(FILES["bhav_hist"],           ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"])
-    ensure_headers(FILES["tech_latest"],         ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume",
-                                                  "Range","TR","ATR14","SMA10","SMA20","SMA50","BB_Mid","BB_Upper","BB_Lower",
-                                                  "BB_Bandwidth","CLV","RangeAvg20","VolAvg20","HI55","HI55_Recent","NR7","Delivery_Pct"])
-
-    # Hist last date (for staleness)
-    prev_last_date = None
-    try:
-        hh = pd.read_csv(FILES["bhav_hist"])
-        if not hh.empty:
-            prev_last_date = pd.to_datetime(hh["Date"]).max()
-    except Exception:
-        pass
-
-    # 1) Network attempt (strict budget)
-    bhav_res = fetch_latest_bhav_failfast()
-
-    # 2) Local fallback (always attempt; it only writes if newer)
-    local_res = ingest_local_bhav_if_new()
-
-    # Determine new hist state
-    hist_rows_after = 0; new_last_date = prev_last_date
-    try:
-        hist = pd.read_csv(FILES["bhav_hist"])
-        if not hist.empty:
-            hist_rows_after = int(len(hist))
-            new_last_date = pd.to_datetime(hist["Date"]).max()
-    except Exception:
-        pass
-
-    # 3) Corporates (best-effort)
-    bulk_res  = fetch_corporates_one("bulk")
-    if bulk_res["ok"]: atomic_write_df(bulk_res["df"], FILES["bulk_latest"])
-    block_res = fetch_corporates_one("block")
-    if block_res["ok"]: atomic_write_df(block_res["df"], FILES["block_latest"])
-    mto_res   = fetch_mto_latest()
-    if mto_res["ok"]:
-        atomic_write_df(mto_res["df"], FILES["deliverables_latest"])
-        try: mh = pd.read_csv(FILES["deliverables_hist"])
-        except Exception: mh = pd.DataFrame(columns=mto_res["df"].columns)
-        allm = pd.concat([mh, mto_res["df"]], ignore_index=True).drop_duplicates(subset=["Date","Symbol","Series"], keep="last")
-        if not allm.empty:
-            allm["Date"] = pd.to_datetime(allm["Date"]); cutoff = allm["Date"].max() - timedelta(days=120)
-            allm = allm[allm["Date"] >= cutoff].copy()
-            atomic_write_df(allm.assign(Date=allm["Date"].dt.strftime("%Y-%m-%d")), FILES["deliverables_hist"])
-
-    # 4) Derive 52W (from hist)
-    try:
-        df = pd.read_csv(FILES["bhav_hist"])
-        if not df.empty:
-            df["Date"] = pd.to_datetime(df["Date"])
-            cutoff = df["Date"].max() - timedelta(days=370)
-            df = df[df["Date"] >= cutoff].copy()
-            agg = df.groupby("Symbol").agg(High52W=("High","max"), Low52W=("Low","min")).reset_index()
-            hi = df.merge(agg[["Symbol","High52W"]], on="Symbol").query("High==High52W")
-            hi = hi.sort_values(["Symbol","Date"]).groupby("Symbol").tail(1)[["Symbol","Date"]].rename(columns={"Date":"High52W_Date"})
-            lo = df.merge(agg[["Symbol","Low52W"]], on="Symbol").query("Low==Low52W")
-            lo = lo.sort_values(["Symbol","Date"]).groupby("Symbol").tail(1)[["Symbol","Date"]].rename(columns={"Date":"Low52W_Date"})
-            out = agg.merge(hi, on="Symbol", how="left").merge(lo, on="Symbol", how="left")
-            for c in ["High52W_Date","Low52W_Date"]:
-                out[c] = pd.to_datetime(out[c], errors="coerce").dt.strftime("%Y-%m-%d")
-            atomic_write_df(out[["Symbol","High52W","High52W_Date","Low52W","Low52W_Date"]], FILES["hi52w"])
-    except Exception:
-        pass
-
-    # 5) Indicators (latest-day slice)
-    tech_res = compute_indicators_and_latest(mto_res["df"] if mto_res.get("ok") else None)
-
-    # 6) Status + staleness
-    status = {
-        "ok": True,
-        "when_ist": now_ist_iso(),
-        "steps": {
-            "bhav": {"ok": bool(bhav_res["ok"]), "date": bhav_res.get("date"),
-                     "rows": bhav_res.get("rows", 0), "budget_s": bhav_res.get("budget_s", 0)},
-            "local_bhav": local_res,
-            "bhav_hist": {"rows": hist_rows_after,
-                          "prev_last_date": None if prev_last_date is None else prev_last_date.strftime("%Y-%m-%d"),
-                          "last_date": None if new_last_date is None else new_last_date.strftime("%Y-%m-%d")},
-            "bulk": {"ok": bool(bulk_res["ok"]), "rows": bulk_res.get("rows", 0)},
-            "block": {"ok": bool(block_res["ok"]), "rows": block_res.get("rows", 0)},
-            "deliverables": {"ok": bool(mto_res["ok"]), "rows": mto_res.get("rows", 0)},
-            "tech_latest": tech_res,
-        },
-        "debug": { "bhav_urls_tried": bhav_res.get("tried", [])[:50] }
-    }
-    stale = True
-    if new_last_date is not None:
-        age = biz_age_days(new_last_date)
-        stale = age >= 2
-    status["stale_2biz_days"] = bool(stale)
-
-    atomic_write_text(json.dumps(status, indent=2), FILES["status"])
-    print(json.dumps(status, indent=2))
-    return 0
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+# ---------------- Local ingest (robust) ----------------
+def ingest_local_bhav_candidates() -> Dict[str, Any]:
+    """
+    Ingest any local bhav CSVs und
