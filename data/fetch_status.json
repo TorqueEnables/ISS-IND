@@ -1,12 +1,12 @@
 {
   "ok": true,
-  "when_ist": "2025-11-03T11:56:51.310202+05:30",
+  "when_ist": "2025-11-03T12:09:15.929701+05:30",
   "steps": {
     "bhav": {
       "ok": false,
       "date": null,
       "rows": 0,
-      "budget_s": 4
+      "budget_s": 3
     },
     "local_bhav": {
       "used": false,
@@ -52,7 +52,22 @@
       "http://archives.nseindia.com/products/content/sec_bhavdata_full_30102025.csv",
       "https://archives.nseindia.com/content/historical/EQUITIES/2025/OCT/cm30OCT2025bhav.csv.zip",
       "http://archives.nseindia.com/content/historical/EQUITIES/2025/OCT/cm30OCT2025bhav.csv.zip"
-    ]
+    ],
+    "local_files": {
+      "prices_dir_exists": true,
+      "csv_in_prices": [
+        "bhav_27102025.csv",
+        "bhav_hist.csv",
+        "bhav_latest.csv",
+        "sec_bhavdata_full_30102025.csv",
+        "sec_bhavdata_full_31102025.csv"
+      ],
+      "local_candidates": [
+        "bhav_latest.csv",
+        "sec_bhavdata_full_30102025.csv",
+        "sec_bhavdata_full_31102025.csv"
+      ]
+    }
   },
   "stale_2biz_days": true
 }
