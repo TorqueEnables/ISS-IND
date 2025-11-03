@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "when_ist": "2025-11-03T13:22:16.998412+05:30",
+  "when_ist": "2025-11-03T13:29:16.957376+05:30",
   "steps": {
     "bhav": {
       "ok": false,
@@ -22,11 +22,11 @@
     },
     "bulk": {
       "ok": true,
-      "rows": 3
+      "rows": 4
     },
     "block": {
       "ok": true,
-      "rows": 3
+      "rows": 4
     },
     "deliverables": {
       "ok": false,
@@ -64,7 +64,9 @@
       ],
       "local_candidates": [
         "bhav_27102025.csv",
-        "bhav_latest.csv"
+        "bhav_latest.csv",
+        "sec_bhavdata_full_30102025.csv",
+        "sec_bhavdata_full_31102025.csv"
       ],
       "local_ingest": [
         {
@@ -80,7 +82,9 @@
             "LOW_PRICE",
             "LAST_PRICE",
             "CLOSE_PRICE",
-            "AVG_PRICE"
+            "AVG_PRICE",
+            "TTL_TRD_QNTY",
+            "TURNOVER_LACS"
           ],
           "error": "arg must be a list, tuple, 1-d array, or Series"
         },
@@ -97,7 +101,47 @@
             "LOW_PRICE",
             "LAST_PRICE",
             "CLOSE_PRICE",
-            "AVG_PRICE"
+            "AVG_PRICE",
+            "TTL_TRD_QNTY",
+            "TURNOVER_LACS"
+          ],
+          "error": "arg must be a list, tuple, 1-d array, or Series"
+        },
+        {
+          "file": "sec_bhavdata_full_30102025.csv",
+          "raw_rows": 3035,
+          "raw_cols": [
+            "SYMBOL",
+            "SERIES",
+            "DATE1",
+            "PREV_CLOSE",
+            "OPEN_PRICE",
+            "HIGH_PRICE",
+            "LOW_PRICE",
+            "LAST_PRICE",
+            "CLOSE_PRICE",
+            "AVG_PRICE",
+            "TTL_TRD_QNTY",
+            "TURNOVER_LACS"
+          ],
+          "error": "arg must be a list, tuple, 1-d array, or Series"
+        },
+        {
+          "file": "sec_bhavdata_full_31102025.csv",
+          "raw_rows": 3038,
+          "raw_cols": [
+            "SYMBOL",
+            "SERIES",
+            "DATE1",
+            "PREV_CLOSE",
+            "OPEN_PRICE",
+            "HIGH_PRICE",
+            "LOW_PRICE",
+            "LAST_PRICE",
+            "CLOSE_PRICE",
+            "AVG_PRICE",
+            "TTL_TRD_QNTY",
+            "TURNOVER_LACS"
           ],
           "error": "arg must be a list, tuple, 1-d array, or Series"
         }
