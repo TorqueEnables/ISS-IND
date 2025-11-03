@@ -1,0 +1,57 @@
+name: Score & Rank (Weekly Pack)
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'data/tech_latest.csv'
+      - 'data/prices/bhav_hist.csv'
+      - 'data/highlow_52w.csv'
+      - 'data/deliverables_latest.csv'
+      - 'data/bulk_deals_latest.csv'
+      - 'data/block_deals_latest.csv'
+      - 'data/CF-Insider-Trading-equities-latest.csv'
+  schedule:
+    - cron: '10 0 * * 1'   # 05:40 IST Mondays (adjust as you like)
+
+permissions:
+  contents: write
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run scorer
+        run: |
+          python scripts/score_week.py
+
+      - name: Commit outputs
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "score: refresh WEEK_PACK"
+          file_pattern: |
+            out/WEEK_PACK.csv
+            data/score_status.json
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Show status
+        run: |
+          echo "::group::score_status.json"
+          cat data/score_status.json || true
+          echo "::endgroup::"
