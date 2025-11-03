@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-StakeLens — Manual Upload Processor (local-only)
+StakeLens — Manual Upload Processor (local-only, duplicate-safe)
 - No network calls.
 - Ingest raw NSE bhav CSVs you drop under data/prices/.
 - Normalize + append to data/prices/bhav_hist.csv (de-dup on Date+Symbol; ~15 months kept).
 - Copy the latest raw bhav to data/prices/bhav_latest.csv (to keep V1 compatibility).
 - Derive:
-    - data/deliverables_latest.csv (from bhav's DELIV columns)
+    - data/deliverables_latest.csv (from bhav's DELIV columns when present)
     - data/highlow_52w.csv
     - data/tech_latest.csv (ATR14/SMA/BB/NR7 + Delivery_Pct)
 - Normalize corporates if present:
     - data/Bulk-Deals-*.csv  -> data/bulk_deals_latest.csv
     - data/Block-Deals-*.csv -> data/block_deals_latest.csv
-- Write data/process_status.json with deep diagnostics.
+- Write data/process_status.json with diagnostics.
+
+Key change vs previous: column picking is duplicate-safe (DATE1/TIMESTAMP won’t collide).
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ PRICES_DIR = os.path.join(DATA_DIR, "prices")
 FILES = {
     "status":        os.path.join(DATA_DIR, "process_status.json"),
     "bhav_hist":     os.path.join(PRICES_DIR, "bhav_hist.csv"),
-    "bhav_latest":   os.path.join(PRICES_DIR, "bhav_latest.csv"),  # raw copy of the latest daily CSV
+    "bhav_latest":   os.path.join(PRICES_DIR, "bhav_latest.csv"),  # raw copy of latest daily CSV
     "hi52w":         os.path.join(DATA_DIR, "highlow_52w.csv"),
     "tech_latest":   os.path.join(DATA_DIR, "tech_latest.csv"),
     "deliverables":  os.path.join(DATA_DIR, "deliverables_latest.csv"),
@@ -52,7 +54,14 @@ def atomic_write_text(txt: str, path: str):
         f.write(txt)
     os.replace(tmp, path)
 
-# ---------- Header sanitation ----------
+# ---------- tolerant CSV read ----------
+def read_csv_any(path: str) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path, dtype=str, skipinitialspace=True)
+    except Exception:
+        return pd.read_csv(path, dtype=str, skipinitialspace=True, encoding="latin-1")
+
+# ---------- header sanitation & picking ----------
 _SANITIZE_RE = re.compile(r"[^a-z0-9_]+")
 
 def _clean_col(name: str) -> str:
@@ -62,125 +71,117 @@ def _clean_col(name: str) -> str:
     key = re.sub(r"_+", "_", key).strip("_")
     return key
 
-CANON = {
-    "date": "Date", "date1": "Date", "timestamp":"Date","tradedate":"Date","trade_date":"Date","traded_date":"Date",
-    "symbol":"Symbol", "series":"Series",
-    "open":"Open","open_price":"Open",
-    "high":"High","high_price":"High",
-    "low":"Low","low_price":"Low",
-    "close":"Close","close_price":"Close","last_price":"Close",
-    "prevclose":"PrevClose","prev_close":"PrevClose","previousclose":"PrevClose","previous_close":"PrevClose",
-    "volume":"Volume","tottrdqty":"Volume","ttl_trd_qnty":"Volume","totaltradedquantity":"Volume",
-    "turnover":"Turnover","tottrdval":"Turnover","turnover_lacs":"Turnover",
-    # deliverables in sec_bhavdata_full
-    "deliv_qty":"DELIV_QTY","deliv_per":"DELIV_PER","deliv_qty_shares_":"DELIV_QTY",
-}
+def build_sanitized_map(df: pd.DataFrame) -> Dict[str, List[str]]:
+    """Return mapping: sanitized_key -> [original_col_names in order]"""
+    m: Dict[str, List[str]] = {}
+    for c in df.columns:
+        k = _clean_col(c)
+        m.setdefault(k, []).append(c)
+    return m
 
-def _parse_date_series(s: pd.Series) -> pd.Series:
+def colpick(df: pd.DataFrame, smap: Dict[str, List[str]], *keys: str) -> Optional[str]:
+    """Pick the first present column among candidate sanitized keys; return original name."""
+    for k in keys:
+        if k in smap and len(smap[k]) > 0:
+            return smap[k][0]
+    return None
+
+def seriespick(df: pd.DataFrame, smap: Dict[str, List[str]], *keys: str) -> Optional[pd.Series]:
+    c = colpick(df, smap, *keys)
+    return None if c is None else df[c]
+
+def parse_date_series(s: pd.Series) -> pd.Series:
+    if s is None:
+        return pd.Series([pd.NaT]*0, dtype="datetime64[ns]")
     d = pd.to_datetime(s, errors="coerce")
-    if d.notna().sum() >= max(1, int(0.7*len(s))): return d
-    d2 = pd.to_datetime(s, errors="coerce", dayfirst=True); d = d.fillna(d2)
+    if d.notna().sum() >= max(1, int(0.7*len(s))):
+        return d
+    d2 = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    d = d.fillna(d2)
+    # last-attempt explicit patterns
     for fmt in ("%d-%b-%Y", "%d-%B-%Y", "%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
-        d3 = pd.to_datetime(s, format=fmt, errors="coerce"); d = d.fillna(d3)
+        d3 = pd.to_datetime(s, format=fmt, errors="coerce")
+        d = d.fillna(d3)
     return d
 
+# ---------- bhav normalization (duplicate-safe) ----------
 def normalize_bhav(raw: pd.DataFrame) -> pd.DataFrame:
-    df = raw.copy()
-    # map columns
-    new_cols = []
-    for c in df.columns:
-        key = _clean_col(c)
-        new_cols.append(CANON.get(key, str(c).strip()))
-    df.columns = new_cols
-    # ensure required columns
-    for k in KEEP_COLS:
-        if k not in df.columns:
-            df[k] = None
-    # coerce
-    df["Symbol"] = df["Symbol"].astype(str).str.upper().str.strip()
-    df["Series"] = df["Series"].astype(str).str.upper().str.strip()
-    df["Date"]   = _parse_date_series(df["Date"]).dt.strftime("%Y-%m-%d")
-    for c in ["Open","High","Low","Close","PrevClose","Volume","Turnover"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-    out = df[KEEP_COLS].dropna(subset=["Date","Symbol"])
-    return out
+    smap = build_sanitized_map(raw)
+
+    s_sym = seriespick(raw, smap, "symbol", "security_symbol", "securityname", "security_name")
+    s_ser = seriespick(raw, smap, "series")
+    s_dt  = seriespick(raw, smap, "date1", "date", "timestamp", "tradedate", "trade_date", "traded_date")
+
+    s_open  = seriespick(raw, smap, "open_price", "open")
+    s_high  = seriespick(raw, smap, "high_price", "high")
+    s_low   = seriespick(raw, smap, "low_price", "low")
+    s_close = seriespick(raw, smap, "close_price", "last_price", "close")
+
+    s_prev  = seriespick(raw, smap, "prev_close", "prevclose", "previous_close", "previousclose")
+    s_vol   = seriespick(raw, smap, "ttl_trd_qnty", "tottrdqty", "totaltradedquantity", "volume")
+    s_tov   = seriespick(raw, smap, "turnover_lacs", "tottrdval", "turnover")
+
+    df = pd.DataFrame({
+        "Date":      parse_date_series(s_dt).dt.strftime("%Y-%m-%d") if s_dt is not None else None,
+        "Symbol":    s_sym.astype(str).str.upper().str.strip() if s_sym is not None else None,
+        "Series":    s_ser.astype(str).str.upper().str.strip() if s_ser is not None else None,
+        "Open":      pd.to_numeric(s_open,  errors="coerce"),
+        "High":      pd.to_numeric(s_high,  errors="coerce"),
+        "Low":       pd.to_numeric(s_low,   errors="coerce"),
+        "Close":     pd.to_numeric(s_close, errors="coerce"),
+        "PrevClose": pd.to_numeric(s_prev,  errors="coerce"),
+        "Volume":    pd.to_numeric(s_vol,   errors="coerce"),
+        "Turnover":  pd.to_numeric(s_tov,   errors="coerce"),
+    })
+
+    df = df.dropna(subset=["Date","Symbol"]).copy()
+    # Keep only EQ/BE/SM etc. if Series present; otherwise pass through
+    if "Series" in df.columns and df["Series"].notna().any():
+        df["Series"] = df["Series"].fillna("")
+    return df[KEEP_COLS]
 
 # ---------- Discover local bhav files ----------
 def bhav_candidates() -> List[str]:
     out = []
     for p in sorted(set(glob.glob(os.path.join(PRICES_DIR, "*.csv")))):
         name = os.path.basename(p).lower()
-        if name == "bhav_hist.csv" or name == "bhav_latest.csv":
+        if name in {"bhav_hist.csv", "bhav_latest.csv"}:
             continue
+        # quick sniff to ensure bhav-ish schema
         try:
-            head = pd.read_csv(p, nrows=1, dtype=str, skipinitialspace=True)
+            head = read_csv_any(p).head(1)
         except Exception:
-            try:
-                head = pd.read_csv(p, nrows=1, dtype=str, skipinitialspace=True, encoding="latin-1")
-            except Exception:
-                continue
-        cols = list(map(str, head.columns))
-        cols_sanitized = set(_clean_col(c) for c in cols)
-        # minimally expect symbol+series and a date-ish column
-        if "symbol" in cols_sanitized and "series" in cols_sanitized and ({"date","date1","timestamp"} & cols_sanitized):
+            continue
+        cols = {_clean_col(c) for c in head.columns}
+        if "symbol" in cols and "series" in cols and {"date","date1","timestamp"} & cols:
             out.append(p)
     return out
 
 # ---------- Corporates normalization ----------
 def normalize_corporates(csv_path: str, kind: str) -> Optional[pd.DataFrame]:
     try:
-        raw = pd.read_csv(csv_path, dtype=str, skipinitialspace=True)
+        raw = read_csv_any(csv_path)
     except Exception:
-        try:
-            raw = pd.read_csv(csv_path, dtype=str, skipinitialspace=True, encoding="latin-1")
-        except Exception:
-            return None
-    # sanitize headers
-    m = {}
-    for c in raw.columns:
-        key = _clean_col(c)
-        m[c] = key
-    df = raw.rename(columns=m)
-    # map common fields seen in NSE downloads
-    sym  = df.filter(regex=r"^symbol$|^security_name$|^securitysymbol$").copy()
-    if sym.shape[1]==0: return None
-    df["Symbol"] = sym.iloc[:,0].astype(str).str.upper().str.strip()
+        return None
+    smap = build_sanitized_map(raw)
+    s_sym = seriespick(raw, smap, "symbol", "security_name", "securitysymbol")
+    s_bs  = seriespick(raw, smap, "buy_sell", "buy_or_sell", "buysell", "deal_type")
+    s_qty = seriespick(raw, smap, "quantity", "qty", "quantity_traded")
+    s_pr  = seriespick(raw, smap, "price", "avg_price")
+    s_dt  = seriespick(raw, smap, "date", "deal_date", "traded_date")
+    s_cn  = seriespick(raw, smap, "client_name", "buyer_name", "seller_name")
 
-    if kind == "bulk":
-        bs = df.filter(regex=r"^buy_sell$|^buy_or_sell$|^buysell$|^deal_type$").copy()
-        qty= df.filter(regex=r"^quantity$|^qty$|^quantity_traded$").copy()
-        pr = df.filter(regex=r"^price$|^avg_price$").copy()
-        dt = df.filter(regex=r"^date$|^deal_date$|^traded_date$").copy()
-        cn = df.filter(regex=r"^client_name$|^buyer_name$|^seller_name$").copy()
-        out = pd.DataFrame({
-            "Date": pd.to_datetime(dt.iloc[:,0], errors="coerce").dt.strftime("%Y-%m-%d") if dt.shape[1] else None,
-            "Symbol": df["Symbol"],
-            "Client_Name": cn.iloc[:,0] if cn.shape[1] else None,
-            "Buy_Sell": bs.iloc[:,0].str.upper().str.replace("PURCHASE","BUY") if bs.shape[1] else None,
-            "Quantity": pd.to_numeric(qty.iloc[:,0], errors="coerce") if qty.shape[1] else None,
-            "Price": pd.to_numeric(pr.iloc[:,0], errors="coerce") if pr.shape[1] else None,
-            "Source": os.path.basename(csv_path),
-        })
-        return out
-
-    if kind == "block":
-        bs = df.filter(regex=r"^buy_sell$|^deal_type$|^buysell$").copy()
-        qty= df.filter(regex=r"^quantity$|^qty$").copy()
-        pr = df.filter(regex=r"^price$|^avg_price$").copy()
-        dt = df.filter(regex=r"^date$|^deal_date$|^traded_date$").copy()
-        cn = df.filter(regex=r"^client_name$|^buyer_name$|^seller_name$").copy()
-        out = pd.DataFrame({
-            "Date": pd.to_datetime(dt.iloc[:,0], errors="coerce").dt.strftime("%Y-%m-%d") if dt.shape[1] else None,
-            "Symbol": df["Symbol"],
-            "Client_Name": cn.iloc[:,0] if cn.shape[1] else None,
-            "Buy_Sell": bs.iloc[:,0].str.upper().str.replace("PURCHASE","BUY") if bs.shape[1] else None,
-            "Quantity": pd.to_numeric(qty.iloc[:,0], errors="coerce") if qty.shape[1] else None,
-            "Price": pd.to_numeric(pr.iloc[:,0], errors="coerce") if pr.shape[1] else None,
-            "Source": os.path.basename(csv_path),
-        })
-        return out
-
-    return None
+    base = {
+        "Date":   parse_date_series(s_dt).dt.strftime("%Y-%m-%d") if s_dt is not None else None,
+        "Symbol": s_sym.astype(str).str.upper().str.strip() if s_sym is not None else None,
+        "Client_Name": s_cn if s_cn is not None else None,
+        "Buy_Sell": s_bs.astype(str).str.upper().str.replace("PURCHASE","BUY") if s_bs is not None else None,
+        "Quantity": pd.to_numeric(s_qty, errors="coerce") if s_qty is not None else None,
+        "Price":    pd.to_numeric(s_pr,  errors="coerce") if s_pr  is not None else None,
+        "Source":   os.path.basename(csv_path),
+    }
+    df = pd.DataFrame(base).dropna(subset=["Date","Symbol"], how="any")
+    return df if not df.empty else None
 
 # ---------- Indicators ----------
 def compute_indicators_and_latest(deliv_latest: Optional[pd.DataFrame]) -> Dict[str, Any]:
@@ -251,8 +252,12 @@ def main():
     except Exception:
         hist = pd.DataFrame(columns=KEEP_COLS)
 
-    # Discover bhav CSVs you dropped
-    files = bhav_candidates()
+    files = []
+    try:
+        files = bhav_candidates()
+    except Exception:
+        files = []
+
     diagnostics = []
     total_added = 0
     last_day_seen = None
@@ -261,35 +266,25 @@ def main():
 
     for path in files:
         entry = {"file": os.path.basename(path)}
-        # tolerant read
         try:
-            try:
-                raw = pd.read_csv(path, dtype=str, skipinitialspace=True)
-            except Exception:
-                raw = pd.read_csv(path, dtype=str, skipinitialspace=True, encoding="latin-1")
-
+            raw = read_csv_any(path)
             entry["raw_rows"] = int(len(raw))
             entry["raw_cols"] = list(map(str, list(raw.columns)[:12]))
 
-            # try to detect the date of this file for “latest raw” copy
-            dt_col = None
-            for c in raw.columns:
-                key = _clean_col(c)
-                if key in {"date","date1","timestamp","tradedate","trade_date","traded_date"}:
-                    dt_col = c; break
-            file_date = None
-            if dt_col is not None:
-                dts = pd.to_datetime(raw[dt_col], errors="coerce", dayfirst=True)
-                if dts.notna().any():
-                    file_date = dts.dropna().iloc[0]
-            entry["detected_date"] = None if file_date is None else str(file_date.date())
+            # detect file date from the best available date-like col (duplicate-safe)
+            smap = build_sanitized_map(raw)
+            s_dt = seriespick(raw, smap, "date1", "date", "timestamp", "tradedate", "trade_date", "traded_date")
+            file_date = parse_date_series(s_dt)
+            fdate = None
+            if file_date.notna().any():
+                fdate = file_date.dropna().iloc[0]
+                entry["detected_date"] = str(fdate.date())
 
             df = normalize_bhav(raw)
             entry["norm_rows"] = int(len(df))
             entry["norm_null_date"] = int(df["Date"].isna().sum()) if "Date" in df.columns else None
             entry["norm_null_symbol"] = int(df["Symbol"].isna().sum()) if "Symbol" in df.columns else None
 
-            # new rows vs hist
             if not df.empty:
                 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
                 if not hist.empty:
@@ -304,18 +299,18 @@ def main():
                     hist = pd.concat([hist, df_new], ignore_index=True)
                     total_added += len(df_new)
 
-                # track latest raw
-                if file_date is not None and (last_raw_date is None or file_date > last_raw_date):
-                    last_raw_date = file_date
+                # track latest raw (by detected file date)
+                if fdate is not None and (last_raw_date is None or fdate > last_raw_date):
+                    last_raw_date = fdate
                     last_raw_path = path
-                    last_day_seen = file_date
+                    last_day_seen = fdate
 
         except Exception as e:
             entry["error"] = str(e)
 
         diagnostics.append(entry)
 
-    # finalize hist window & write
+    # finalize hist & write
     if not hist.empty:
         hist["Date"] = pd.to_datetime(hist["Date"], errors="coerce")
         hist = hist.dropna(subset=["Date","Symbol"])
@@ -325,7 +320,7 @@ def main():
         hist_out = hist.sort_values(["Date","Symbol"]).assign(Date=hist["Date"].dt.strftime("%Y-%m-%d"))
         atomic_write_df(hist_out[KEEP_COLS], FILES["bhav_hist"])
 
-    # copy latest raw bhav to bhav_latest.csv (unmodified) for V1 compatibility
+    # copy latest raw bhav to bhav_latest.csv (unmodified)
     if last_raw_path:
         with open(last_raw_path, "rb") as src, open(FILES["bhav_latest"], "wb") as dst:
             dst.write(src.read())
@@ -334,39 +329,31 @@ def main():
     deliv_rows = 0
     try:
         if last_raw_path:
-            try:
-                raw = pd.read_csv(last_raw_path, dtype=str, skipinitialspace=True)
-            except Exception:
-                raw = pd.read_csv(last_raw_path, dtype=str, skipinitialspace=True, encoding="latin-1")
-            # map columns
-            colmap = {_clean_col(c): c for c in raw.columns}
-            def colpick(*keys):
-                for k in keys:
-                    if k in colmap: return colmap[k]
-                return None
-            c_sym = colpick("symbol")
-            c_ser = colpick("series")
-            c_dt  = colpick("date","date1","timestamp","tradedate","trade_date","traded_date")
-            c_dq  = colpick("deliv_qty","deliv_qty_shares_")
-            c_tq  = colpick("ttl_trd_qnty","tottrdqty","volume")
-            c_dp  = colpick("deliv_per")
-            if c_sym and c_ser and c_dt and (c_dq or c_dp):
+            raw = read_csv_any(last_raw_path)
+            smap = build_sanitized_map(raw)
+            s_sym = seriespick(raw, smap, "symbol")
+            s_ser = seriespick(raw, smap, "series")
+            s_dt  = seriespick(raw, smap, "date1", "date", "timestamp", "tradedate", "trade_date", "traded_date")
+            s_dq  = seriespick(raw, smap, "deliv_qty", "deliv_qty_shares_")
+            s_tq  = seriespick(raw, smap, "ttl_trd_qnty", "tottrdqty", "volume")
+            s_dp  = seriespick(raw, smap, "deliv_per")
+
+            if s_sym is not None and s_ser is not None and s_dt is not None and (s_dq is not None or s_dp is not None):
                 df = pd.DataFrame({
-                    "Date": pd.to_datetime(raw[c_dt], errors="coerce", dayfirst=True).dt.strftime("%Y-%m-%d"),
-                    "Symbol": raw[c_sym].astype(str).str.upper().str.strip(),
-                    "Series": raw[c_ser].astype(str).str.upper().str.strip(),
-                    "Deliverable_Qty": pd.to_numeric(raw[c_dq], errors="coerce") if c_dq else None,
-                    "Traded_Qty": pd.to_numeric(raw[c_tq], errors="coerce") if c_tq else None,
-                    "Delivery_Pct": pd.to_numeric(raw[c_dp], errors="coerce") if c_dp else None,
-                })
-                df = df.dropna(subset=["Date","Symbol"])
-                atomic_write_df(df, FILES["deliverables"])
-                deliv_rows = int(len(df))
+                    "Date":   parse_date_series(s_dt).dt.strftime("%Y-%m-%d"),
+                    "Symbol": s_sym.astype(str).str.upper().str.strip(),
+                    "Series": s_ser.astype(str).str.upper().str.strip(),
+                    "Deliverable_Qty": pd.to_numeric(s_dq, errors="coerce") if s_dq is not None else None,
+                    "Traded_Qty":      pd.to_numeric(s_tq, errors="coerce") if s_tq is not None else None,
+                    "Delivery_Pct":    pd.to_numeric(s_dp, errors="coerce") if s_dp is not None else None,
+                }).dropna(subset=["Date","Symbol"])
+                if not df.empty:
+                    atomic_write_df(df, FILES["deliverables"])
+                    deliv_rows = int(len(df))
     except Exception:
         pass
 
-    # corporates snapshots (optional)
-    # pick the "latest modified" Bulk/Block file, normalize, write *_latest.csv
+    # corporates snapshots
     def latest_by_mtime(glob_pat: str) -> Optional[str]:
         paths = glob.glob(glob_pat)
         if not paths: return None
@@ -428,7 +415,7 @@ def main():
         "inputs": {
             "bhav_files_seen": [os.path.basename(p) for p in files],
             "latest_raw_file": None if last_raw_path is None else os.path.basename(last_raw_path),
-            "latest_raw_date": None if last_day_seen is None else str(last_day_seen.date()),
+            "latest_raw_date": None if last_raw_date is None else str(last_raw_date.date()),
             "bulk_src":  None if bulk_src  is None else os.path.basename(bulk_src),
             "block_src": None if block_src is None else os.path.basename(block_src),
         },
