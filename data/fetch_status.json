@@ -1,18 +1,19 @@
 {
   "ok": true,
-  "when_ist": "2025-11-03T11:47:10.011045+05:30",
+  "when_ist": "2025-11-03T11:56:51.310202+05:30",
   "steps": {
     "bhav": {
       "ok": false,
       "date": null,
       "rows": 0,
-      "budget_s": 7
+      "budget_s": 4
     },
     "local_bhav": {
       "used": false,
-      "rows": 0,
+      "files": [],
+      "added_rows": 0,
       "date": null,
-      "reason": "local_empty"
+      "reason": "no_matching_or_empty"
     },
     "bhav_hist": {
       "rows": 0,
