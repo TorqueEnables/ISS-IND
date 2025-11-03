@@ -1,0 +1,51 @@
+name: Weekly Brief (Markdown)
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'out/WEEK_PACK.csv'
+  schedule:
+    - cron: '20 0 * * 1'   # 05:50 IST Mondays
+
+permissions:
+  contents: write
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate Weekly Brief
+        run: |
+          python scripts/generate_weekly_brief.py
+
+      - name: Commit brief
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "brief: refresh WEEK_BRIEF.md"
+          file_pattern: |
+            out/WEEK_BRIEF.md
+            data/brief_status.json
+          commit_user_name: github-actions[bot]
+          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Show brief status
+        run: |
+          echo "::group::brief_status.json"
+          cat data/brief_status.json || true
+          echo "::endgroup::"
