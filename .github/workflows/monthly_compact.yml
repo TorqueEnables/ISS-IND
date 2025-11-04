@@ -1,0 +1,40 @@
+name: Monthly Data Compact
+
+on:
+  schedule:
+    - cron: '30 22 1 * *'   # 04:00 IST on the 1st
+  workflow_dispatch:
+
+jobs:
+  compact:
+    runs-on: ubuntu-latest
+    env:
+      RETAIN_COUNT: '30'     # change to 45/60 if you want a longer runway
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Keep only last ${{ env.RETAIN_COUNT }} raw bhav CSVs
+        shell: bash
+        run: |
+          set -e
+          keep="${RETAIN_COUNT:-30}"
+
+          # Patterns we recognize for raw bhavs
+          for pattern in "data/prices/sec_bhavdata_full_*.csv" "data/prices/cm"*bhav.csv; do
+            mapfile -t files < <(ls -1t $pattern 2>/dev/null || true)
+            if [ ${#files[@]} -gt $keep ]; then
+              to_remove=( "${files[@]:$keep}" )
+              echo "Pruning ${#to_remove[@]} old files for pattern: $pattern"
+              git rm -f "${to_remove[@]}"
+            else
+              echo "No prune needed for pattern: $pattern"
+            fi
+          done
+
+      - name: Commit cleanup
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions[bot]"
+          git commit -m "Housekeeping: keep last ${RETAIN_COUNT} raw bhav CSVs; prune older" || echo "Nothing to commit"
+          git push
