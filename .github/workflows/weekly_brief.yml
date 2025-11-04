@@ -1,51 +1,71 @@
-name: Weekly Brief (Markdown)
+name: Weekend Weekly Brief
 
 on:
-  workflow_dispatch: {}
-  push:
-    paths:
-      - 'out/WEEK_PACK.csv'
   schedule:
-    - cron: '20 0 * * 1'   # 05:50 IST Mondays
-
-permissions:
-  contents: write
+    - cron: '30 13 * * 5'   # Friday 19:00 IST
+    - cron: '30 0 * * 6'    # Saturday 06:00 IST (fallback)
+  workflow_dispatch:
 
 jobs:
   brief:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    env:
+      TZ: Asia/Kolkata
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r requirements.txt
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install deps
+      # Gate: ensure we have Friday’s data when running Friday; else let Saturday handle it.
+      - name: Ensure latest is Friday (or allow Saturday)
+        id: gate
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          PY=$(cat <<'PYCODE'
+          import pandas as pd, sys, datetime as dt
+          hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
+          last = hist['Date'].max()
+          dow  = last.weekday()  # Mon=0 ... Sun=6
+          today = pd.Timestamp.now(tz='Asia/Kolkata').weekday()
+          # If Friday run, require last DOW==4 (Fri). If Saturday, allow last==Fri as well.
+          # We'll pass a flag 'ok' to shell.
+          is_fri_data = (dow == 4)
+          print(f"LAST_DATE={last.date()}")
+          print(f"LAST_DOW={dow}")
+          print(f"OK={(is_fri_data or today==5)}")
+          PYCODE
+          )
+          python - <<<$PY | tee gate.txt
+          source gate.txt
 
-      - name: Generate Weekly Brief
+          if [[ "$OK" != "True" ]]; then
+            echo "Friday brief skipped: Friday bhav not found yet."
+            echo "ok=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "ok=true" >> $GITHUB_OUTPUT
+
+      - name: Generate full Weekend Brief
+        if: steps.gate.outputs.ok == 'true'
         run: |
-          python scripts/generate_weekly_brief.py
+          python scripts/score_week.py \
+            --hist data/prices/bhav_hist.csv \
+            --tech data/tech_latest.csv \
+            --out out \
+            --mode lite
 
-      - name: Commit brief
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "brief: refresh WEEK_BRIEF.md"
-          file_pattern: |
-            out/WEEK_BRIEF.md
-            data/brief_status.json
-          commit_user_name: github-actions[bot]
-          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          python scripts/generate_weekly_brief.py \
+            --pack out/WEEK_PACK.csv \
+            --out out/WEEK_BRIEF.md \
+            --rolling false
 
-      - name: Show brief status
+      - name: Commit Weekend Brief
+        if: steps.gate.outputs.ok == 'true'
         run: |
-          echo "::group::brief_status.json"
-          cat data/brief_status.json || true
-          echo "::endgroup::"
+          git config user.email "actions@github.com"
+          git config user.name "github-actions[bot]"
+          git add out/WEEK_* data/*status.json
+          git commit -m "Weekend Brief: $(date -u +'%Y-%m-%dT%H:%MZ')"
+          git push
