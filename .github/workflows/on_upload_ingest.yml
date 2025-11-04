@@ -1,0 +1,70 @@
+name: Process & Score on Upload
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'data/prices/*.csv'
+      - 'data/*Bulk*.csv'
+      - 'data/*Block*.csv'
+      - 'data/*Insider*.csv'
+    paths-ignore:
+      - 'out/**'
+      - 'data/*status.json'
+      - 'README.md'
+  workflow_dispatch:
+
+concurrency:
+  group: process-on-upload
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Kolkata
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Process EOD (build bhav_hist, tech_latest, statuses)
+        run: |
+          python scripts/process_eod.py \
+            --in data/prices \
+            --out data \
+            --asof auto
+
+      - name: Score weekly pack (Lite model)
+        run: |
+          python scripts/score_week.py \
+            --hist data/prices/bhav_hist.csv \
+            --tech data/tech_latest.csv \
+            --out out \
+            --mode lite
+
+      # Optional: keep a rolling brief for “latest watchlist” (not the full Weekend Brief)
+      - name: Rolling brief (optional)
+        run: |
+          python scripts/generate_weekly_brief.py \
+            --pack out/WEEK_PACK.csv \
+            --out out/WEEK_BRIEF.md \
+            --rolling true
+
+      - name: Commit outputs
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions[bot]"
+          git add data/*.csv data/*.json out/*
+          git commit -m "Auto: process & score on upload $GITHUB_SHA" || echo "Nothing to commit"
+          git push
