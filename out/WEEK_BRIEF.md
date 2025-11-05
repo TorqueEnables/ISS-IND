@@ -1,32 +1,32 @@
 # StakeLens — Weekly Brief
 
-**As of:** 31 Oct 2025
-**Universe:** 3,038 rows in WEEK_PACK • **Threshold:** R_SCORE ≥ 65 • **Top N:** 20
+**As of:** 04 Nov 2025
+**Universe:** 3,039 rows in WEEK_PACK • **Threshold:** R_SCORE ≥ 65 • **Top N:** 20
 
 ## Snapshot (What’s dominating the leaders)
-- TREND: 6  ·  PULLBACK55: 6  ·  NR7: 3  ·  ATR_LOW: 6
+- TREND: 6  ·  PULLBACK55: 6  ·  NR7: 4  ·  ATR_LOW: 5
 - Delivery (Q4): 5  ·  INSIDER+: 0  ·  BULK+: 0  ·  BLOCK+: 0
 - NEAR_52W: 0  ·  CALM_52W: 5
 
 ## Top Picks (with triggers)
-- **AIRTELPP** — Score **71** • Close 1566.65 • ATR14 37.03 • SMA20 1516.23 • SMA50 1477.75
+- **DHTL** — Score **71** • Close 117.90 • ATR14 2.46 • SMA20 104.22 • SMA50 71.53
   - WHY: TREND,PULLBACK55,NR7,ATR_LOW,DELIV_Q4,CALM_52W
-  - Trigger: Go long if Close>Entry; Stop below 1564.0; Risk≈44.43
-- **UTINEXT50** — Score **68** • Close 75.04 • ATR14 1.51 • SMA20 74.19 • SMA50 73.35
+  - Trigger: Go long if Close>Entry; Stop below 120.35; Risk≈2.4
+- **PSUBANK** — Score **68** • Close 830.35 • ATR14 21.74 • SMA20 782.15 • SMA50 740.40
   - WHY: TREND,PULLBACK55,NR7,ATR_LOW,DELIV_Q4
-  - Trigger: Go long if Close>Entry; Stop below 74.21; Risk≈1.28
-- **BHARTIARTL** — Score **66** • Close 2054.50 • ATR14 37.06 • SMA20 1996.38 • SMA50 1945.51
+  - Trigger: Go long if Close>Entry; Stop below 803.08; Risk≈23.92
+- **UTISENSETF** — Score **68** • Close 920.49 • ATR14 14.22 • SMA20 916.78 • SMA50 902.60
+  - WHY: TREND,PULLBACK55,NR7,DELIV_Q4,CALM_52W
+  - Trigger: Go long if Close>Entry; Stop below 922.05; Risk≈14.39
+- **MOREALTY** — Score **66** • Close 95.90 • ATR14 1.88 • SMA20 92.36 • SMA50 90.53
+  - WHY: TREND,PULLBACK55,ATR_LOW,DELIV_Q4,CALM_52W
+  - Trigger: Go long if Close>Entry; Stop below 94.43; Risk≈1.81
+- **TIMKEN** — Score **66** • Close 3051.70 • ATR14 65.04 • SMA20 2991.98 • SMA50 2991.42
+  - WHY: TREND,PULLBACK55,ATR_LOW,DELIV_Q4,CALM_52W
+  - Trigger: Go long if Close>Entry; Stop below 3005.0; Risk≈78.05
+- **UNITDSPR** — Score **66** • Close 1450.90 • ATR14 30.21 • SMA20 1359.79 • SMA50 1337.30
   - WHY: TREND,PULLBACK55,NR7,ATR_LOW,CALM_52W
-  - Trigger: Go long if Close>Entry; Stop below 2058.6; Risk≈44.48
-- **BSLSENETFG** — Score **66** • Close 83.96 • ATR14 2.17 • SMA20 83.18 • SMA50 82.01
-  - WHY: TREND,PULLBACK55,ATR_LOW,DELIV_Q4,CALM_52W
-  - Trigger: Go long if Close>Entry; Stop below 84.23; Risk≈2.37
-- **GROWWMOM50** — Score **66** • Close 10.77 • ATR14 0.23 • SMA20 10.70 • SMA50 10.49
-  - WHY: TREND,PULLBACK55,ATR_LOW,DELIV_Q4,CALM_52W
-  - Trigger: Go long if Close>Entry; Stop below 10.68; Risk≈0.28
-- **PSUBANK** — Score **66** • Close 818.73 • ATR14 22.07 • SMA20 778.54 • SMA50 737.99
-  - WHY: TREND,PULLBACK55,ATR_LOW,DELIV_Q4,CALM_52W
-  - Trigger: Go long if Close>Entry; Stop below 803.08; Risk≈12.18
+  - Trigger: Go long if Close>Entry; Stop below 1375.9; Risk≈36.25
 
 ## Playbook
 - Position **after** price confirms the trigger (Close > Entry).

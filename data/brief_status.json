@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "when": "2025-11-05T03:38:30.695814Z",
+  "as_of": "04 Nov 2025",
+  "rows_pack": 3039,
+  "rows_eligible": 6,
+  "rows_top": 6,
+  "top_symbols": [
+    "DHTL",
+    "PSUBANK",
+    "UTISENSETF",
+    "MOREALTY",
+    "TIMKEN",
+    "UNITDSPR"
+  ],
+  "threshold": 65,
+  "out_md": "out/WEEK_BRIEF.md"
+}

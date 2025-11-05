@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "when": "2025-11-05T03:38:30.342863Z",
+  "note": "",
+  "latest_day": "2025-11-04",
+  "rows": 3039,
+  "top5": [
+    "DHTL",
+    "PSUBANK",
+    "UTISENSETF",
+    "MOREALTY",
+    "TIMKEN"
+  ],
+  "out": "out/WEEK_PACK.csv",
+  "diag": {
+    "inputs_seen": {
+      "hist": "data/prices/bhav_hist.csv",
+      "tech": "data/tech_latest.csv",
+      "hi52": "data/highlow_52w.csv",
+      "deliv": "data/deliverables_latest.csv",
+      "bulk": "data/bulk_deals_latest.csv",
+      "block": "data/block_deals_latest.csv"
+    },
+    "input_rows": {
+      "hist": 254792,
+      "tech": 3039,
+      "hi52": 3267,
+      "deliv": 3039,
+      "bulk": 18236,
+      "block": 1947
+    }
+  }
+}
