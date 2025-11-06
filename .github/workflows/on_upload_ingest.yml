@@ -44,6 +44,31 @@ jobs:
             --out data \
             --asof auto
 
+      - name: Write bhav_latest.csv from bhav_hist.csv
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from datetime import datetime
+          hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
+          if hist.empty:
+              raise SystemExit("bhav_hist.csv is empty; cannot write bhav_latest.csv")
+
+          last = hist['Date'].max()
+          snap = hist[hist['Date'] == last].copy()
+
+          # --- Stable, normalized schema for V1/V2 ---
+          # If your V1 expects the old cm*bhav headers, see the alternative mapping below.
+          cols = ['Date','Symbol','Series','Open','High','Low','Close','PrevClose','Volume','Turnover']
+          missing = [c for c in cols if c not in snap.columns]
+          if missing:
+              raise SystemExit(f"Missing columns in bhav_hist.csv: {missing}")
+
+          out = snap[cols].sort_values(['Symbol','Series'])
+          out.to_csv('data/prices/bhav_latest.csv', index=False)
+
+          print(f"Wrote data/prices/bhav_latest.csv for {last.date()} with {len(out)} rows.")
+          PY
+
       - name: Score weekly pack (Lite)
         run: |
           python scripts/score_week.py \
