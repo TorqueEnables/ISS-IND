@@ -88,9 +88,12 @@ jobs:
         run: |
           git config user.email "actions@github.com"
           git config user.name "github-actions[bot]"
-          git add data/*.csv data/*.json out/*
+          git add data/prices/bhav_hist.csv data/tech_latest.csv data/highlow_52w.csv
+          git add data/prices/bhav_latest.csv
+          git add data/*status.json out/*
           git commit -m "Auto: process & score on upload $GITHUB_SHA" || echo "Nothing to commit"
           git push
+
 
       # Optional Telegram ping (set repo secrets TG_BOT_TOKEN, TG_CHAT_ID)
       - name: Notify Telegram (optional)
