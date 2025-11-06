@@ -1,0 +1,141 @@
+// Fetch Full Bhav (sec_bhavdata_full_DDMMYYYY.csv) and
+// Security-wise Deliverables (MTO_DDMMYYYY.DAT) using real Chromium.
+// Saves to data/prices/ and data/mto/.
+// Tries target date (IST) then falls back to T-1, T-2.
+
+const fs = require('fs');
+const path = require('path');
+const { chromium } = require('playwright'); // installed by 'npx playwright install'
+const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
+
+const OUT_BHAV_DIR = path.resolve('data/prices');
+const OUT_MTO_DIR  = path.resolve('data/mto');
+fs.mkdirSync(OUT_BHAV_DIR, { recursive: true });
+fs.mkdirSync(OUT_MTO_DIR, { recursive: true });
+
+function istNow() {
+  // Build an IST Date (no external deps)
+  const now = new Date();
+  const ist = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  return ist;
+}
+
+function fmtDD(n){ return String(n).padStart(2, '0'); }
+function fmtDDMMYYYY(d){
+  return `${fmtDD(d.getDate())}${fmtDD(d.getMonth()+1)}${d.getFullYear()}`;
+}
+function fmtYYYYMMDD(d){
+  return `${d.getFullYear()}-${fmtDD(d.getMonth()+1)}-${fmtDD(d.getDate())}`;
+}
+function addDays(d, delta){
+  const x = new Date(d); x.setDate(x.getDate()+delta); return x;
+}
+function isWeekendIST(d){ const wd = d.getDay(); return wd === 0 || wd === 6; }
+
+async function saveResponseBody(page, url, outPath, minBytes=1000) {
+  const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => null);
+  if (!resp) return false;
+  const status = resp.status();
+  if (status !== 200) return false;
+  const buf = await resp.body();
+  if (!buf || buf.length < minBytes) return false;
+  fs.writeFileSync(outPath, buf);
+  console.log(`Saved ${outPath} (${buf.length} bytes)`);
+  return true;
+}
+
+async function tryBhav(page, d) {
+  // Prefer the official consolidated "sec_bhavdata_full_DDMMYYYY.csv"
+  const ddmmyyyy = fmtDDMMYYYY(d);
+  const yyyy_mm_dd = fmtYYYYMMDD(d);
+  const out = path.join(OUT_BHAV_DIR, `sec_bhavdata_full_${yyyy_mm_dd}.csv`);
+  if (fs.existsSync(out)) { console.log(`Already have ${out}`); return true; }
+
+  const candidates = [
+    // Primary (consolidated full bhav CSV)
+    `https://archives.nseindia.com/products/content/sec_bhavdata_full_${ddmmyyyy}.csv`,
+  ];
+
+  for (const url of candidates) {
+    const ok = await saveResponseBody(page, url, out, 5_000);
+    if (ok) return true;
+  }
+  return false;
+}
+
+async function tryMTO(page, d) {
+  // Standard daily MTO file is .DAT; we'll store as-is (pipe-delimited).
+  const ddmmyyyy = fmtDDMMYYYY(d);
+  const yyyy_mm_dd = fmtYYYYMMDD(d);
+  const outDat = path.join(OUT_MTO_DIR, `MTO_${yyyy_mm_dd}.DAT`);
+  if (fs.existsSync(outDat)) { console.log(`Already have ${outDat}`); return true; }
+
+  const candidates = [
+    `https://archives.nseindia.com/archives/equities/mto/MTO_${ddmmyyyy}.DAT`,
+  ];
+
+  for (const url of candidates) {
+    const ok = await saveResponseBody(page, url, outDat, 5_000);
+    if (ok) return true;
+  }
+  return false;
+}
+
+async function main() {
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      '--no-sandbox',
+      '--disable-gpu',
+    ],
+  });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
+    viewport: { width: 1366, height: 768 },
+  });
+  const page = await context.newPage();
+
+  // Touch homepage to receive first-party cookies before archives calls
+  try {
+    await page.goto('https://www.nseindia.com/', { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await page.waitForTimeout(1500);
+  } catch(e) {
+    console.warn('Homepage warmup failed (non-fatal):', e.message);
+  }
+
+  // Determine target date in IST.
+  // If weekend, start from last Friday. Otherwise, start from today IST.
+  let tgt = istNow();
+  if (isWeekendIST(tgt)) {
+    // Go back to Friday
+    const delta = tgt.getDay() === 0 ? -2 : -1; // Sun->Fri is -2, Sat->Fri is -1
+    tgt = addDays(tgt, delta);
+  }
+
+  // Try today (or last trading day), then T-1, then T-2
+  const attempts = [0, -1, -2];
+  let bhavOk = false, mtoOk = false;
+  for (const delta of attempts) {
+    const d = addDays(tgt, delta);
+    console.log(`Trying EOD for ${fmtYYYYMMDD(d)}...`);
+    if (!bhavOk) bhavOk = await tryBhav(page, d);
+    if (!mtoOk)  mtoOk  = await tryMTO(page, d);
+    if (bhavOk && mtoOk) break;
+  }
+
+  if (!bhavOk) console.warn('WARNING: Full Bhav not fetched (all attempts failed).');
+  if (!mtoOk)  console.warn('WARNING: MTO not fetched (all attempts failed).');
+
+  await browser.close();
+
+  // Exit non-zero only if BOTH failed (so cron retries via schedule/fallback)
+  if (!bhavOk && !mtoOk) {
+    throw new Error('EOD fetch failed for both Bhav and MTO.');
+  }
+}
+
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
