@@ -1,0 +1,66 @@
+name: Fetch NSE EOD (Bhav + Deliverables)
+
+on:
+  schedule:
+    # Weekdays ~19:00 IST (13:30 UTC) after EOD files usually appear
+    - cron: "30 13 * * 1-5"
+    # Saturday 06:00 IST fallback in case Friday’s files were late
+    - cron: "30 0 * * 6"
+  workflow_dispatch:
+
+concurrency:
+  group: eod-fetch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: |
+          npm ci || npm i
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright EOD fetcher
+        run: node scripts/eod_fetch.js
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git config pull.rebase true
+
+      - name: Pull latest (pre-commit rebase)
+        run: |
+          git fetch origin ${{ github.ref_name }}
+          git pull --rebase origin ${{ github.ref_name }} || true
+
+      - name: Commit EOD files
+        run: |
+          mkdir -p data/prices data/mto
+          git add -A data/prices/*.csv data/mto/*.{DAT,dat}
+          git diff --staged --quiet && echo "No new EOD files" && exit 0 || true
+          git commit -m "EOD update: $(date -u +%F)"
+
+      - name: Rebase onto remote (post-commit)
+        run: |
+          git fetch origin ${{ github.ref_name }}
+          git pull --rebase --autostash origin ${{ github.ref_name }} || true
+
+      - name: Push
+        run: git push origin HEAD:${{ github.ref_name }}
