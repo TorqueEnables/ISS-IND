@@ -69,6 +69,19 @@ jobs:
           print(f"Wrote data/prices/bhav_latest.csv for {last.date()} with {len(out)} rows.")
           PY
 
+      - name: Assert bhav_latest.csv matches hist max date
+        run: |
+          python - <<'PY'
+          import pandas as pd, sys
+          hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
+          latest = pd.read_csv('data/prices/bhav_latest.csv', parse_dates=['Date'], dayfirst=False)
+          d_hist = hist['Date'].max().date()
+          d_latest = latest['Date'].max().date() if 'Date' in latest.columns else None
+          if d_latest != d_hist:
+              sys.exit(f"bhav_latest.csv date {d_latest} != hist max {d_hist}")
+          print(f"OK: bhav_latest.csv is current ({d_hist})")
+          PY
+
       - name: Score weekly pack (Lite)
         run: |
           python scripts/score_week.py \
