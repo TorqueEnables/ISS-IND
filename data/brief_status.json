@@ -1,17 +1,15 @@
 {
   "ok": true,
-  "when": "2025-11-05T03:38:30.695814Z",
-  "as_of": "04 Nov 2025",
-  "rows_pack": 3039,
-  "rows_eligible": 6,
-  "rows_top": 6,
+  "when": "2025-11-07T04:06:13.812809Z",
+  "as_of": "06 Nov 2025",
+  "rows_pack": 3043,
+  "rows_eligible": 4,
+  "rows_top": 4,
   "top_symbols": [
     "DHTL",
-    "PSUBANK",
-    "UTISENSETF",
-    "MOREALTY",
-    "TIMKEN",
-    "UNITDSPR"
+    "GROWWMOM50",
+    "PROV",
+    "TIMKEN"
   ],
   "threshold": 65,
   "out_md": "out/WEEK_BRIEF.md"
