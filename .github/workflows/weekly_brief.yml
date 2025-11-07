@@ -39,20 +39,35 @@ jobs:
           python-version: '3.11'
       - run: pip install -r requirements.txt
 
+      # ✅ Write a proper step output via $GITHUB_OUTPUT (no ::set-output)
       - name: Gate: ensure Friday data exists (or allow Sat)
         id: gate
         shell: bash
         run: |
-          python - <<'PY'
-          import pandas as pd
-          from zoneinfo import ZoneInfo
-          hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
-          last = hist['Date'].max()
-          dow  = pd.Timestamp(last).weekday()
-          today_dow = pd.Timestamp.now(tz=ZoneInfo('Asia/Kolkata')).weekday()
-          ok = (dow == 4) or (today_dow == 5)
-          print(f"::set-output name=ok::{str(ok).lower()}")
-          PY
+          ok="$(
+            python - <<'PY'
+import pandas as pd
+from zoneinfo import ZoneInfo
+
+try:
+    hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
+    if hist.empty:
+        print("false"); raise SystemExit
+except Exception:
+    print("false"); raise SystemExit
+
+last = pd.to_datetime(hist['Date'].max())
+last_dow = int(last.weekday())  # Mon=0 ... Sun=6
+today_dow = int(pd.Timestamp.now(tz=ZoneInfo('Asia/Kolkata')).weekday())
+
+# If run Friday -> require last data is Friday
+# If run Saturday -> allow last data is Friday
+ok = (today_dow == 4 and last_dow == 4) or (today_dow == 5 and last_dow == 4)
+print("true" if ok else "false")
+PY
+          )"
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          echo "Gate OK? $ok"
 
       - name: Score + generate brief
         if: steps.gate.outputs.ok == 'true'
