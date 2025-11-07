@@ -13,6 +13,7 @@ concurrency:
 jobs:
   brief:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     env:
@@ -20,7 +21,8 @@ jobs:
       PYTHONIOENCODING: utf-8
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
@@ -34,13 +36,17 @@ jobs:
           git fetch origin ${{ github.ref_name }}
           git pull --rebase origin ${{ github.ref_name }} || true
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
 
-      # ✅ Write a proper step output via $GITHUB_OUTPUT (no ::set-output)
-      - name: Gate: ensure Friday data exists (or allow Sat)
+      - name: Install requirements
+        run: pip install -r requirements.txt
+
+      # Gate: run Friday only if latest hist date is Friday; run Saturday if latest hist date is Friday.
+      # On manual dispatch, the same rule applies (latest must be a Friday).
+      - name: Gate (need Friday EOD present)
         id: gate
         shell: bash
         run: |
@@ -58,18 +64,18 @@ except Exception:
 
 last = pd.to_datetime(hist['Date'].max())
 last_dow = int(last.weekday())  # Mon=0 ... Sun=6
-today_dow = int(pd.Timestamp.now(tz=ZoneInfo('Asia/Kolkata')).weekday())
+today  = pd.Timestamp.now(tz=ZoneInfo('Asia/Kolkata'))
+today_dow = int(today.weekday())
 
-# If run Friday -> require last data is Friday
-# If run Saturday -> allow last data is Friday
-ok = (today_dow == 4 and last_dow == 4) or (today_dow == 5 and last_dow == 4)
+# Accept if last data is Friday (4) and today is Friday or Saturday.
+ok = (last_dow == 4) and (today_dow in (4,5))
 print("true" if ok else "false")
 PY
           )"
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
           echo "Gate OK? $ok"
 
-      - name: Score + generate brief
+      - name: Score (weekly pack)
         if: steps.gate.outputs.ok == 'true'
         run: |
           python scripts/score_week.py \
@@ -77,6 +83,10 @@ PY
             --tech data/tech_latest.csv \
             --out out \
             --mode lite
+
+      - name: Generate Weekend Brief
+        if: steps.gate.outputs.ok == 'true'
+        run: |
           python scripts/generate_weekly_brief.py \
             --pack out/WEEK_PACK.csv \
             --out out/WEEK_BRIEF.md \
@@ -87,9 +97,9 @@ PY
         run: |
           git add out/WEEK_* data/*status.json
           git diff --staged --quiet && echo "No changes" && exit 0 || true
-          git commit -m "Weekend Brief: $(date -u +'%Y-%m-%dT%H:%MZ')"
+          git commit -m "Weekend Brief (IST): $(date +'%Y-%m-%d %H:%M')"
 
-      - name: Rebase + push with retries
+      - name: Rebase + push (with retries)
         if: steps.gate.outputs.ok == 'true'
         run: |
           set -e
@@ -102,3 +112,23 @@ PY
             echo "Push failed, retrying ($i/3)…"; sleep 3
           done
           exit 1
+
+      # Optional Telegram notification (auto-skips if secrets not set)
+      - name: Notify Telegram (optional)
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
+            MSG="📣 Weekend Brief posted — $(date +'%Y-%m-%d %H:%M IST')%0A• WEEK_PACK.csv and WEEK_BRIEF.md updated"
+            curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
+              -d "chat_id=$TG_CHAT_ID" \
+              -d "text=$MSG" >/dev/null || true
+          else
+            echo "Telegram secrets not set; skipping notify."
+          fi
+
+      - name: Gate result summary
+        if: steps.gate.outputs.ok != 'true'
+        run: echo "Skipped: Friday EOD not present yet. Saturday fallback will handle it."
