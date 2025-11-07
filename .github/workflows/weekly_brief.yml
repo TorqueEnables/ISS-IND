@@ -44,16 +44,22 @@ jobs:
       - name: Install requirements
         run: pip install -r requirements.txt
 
-      # Gate: run Friday only if latest hist date is Friday; run Saturday if latest hist date is Friday.
-      # On manual dispatch, the same rule applies (latest must be a Friday).
+      # Gate: proceed only if the latest date in bhav_hist.csv is Friday (4),
+      # and today (IST) is Friday or Saturday.
       - name: Gate (need Friday EOD present)
         id: gate
         shell: bash
         run: |
+          set -euo pipefail
           ok="$(
             python - <<'PY'
 import pandas as pd
-from zoneinfo import ZoneInfo
+from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("Asia/Kolkata")
+except Exception:
+    tz = None  # fallback: naive
 
 try:
     hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
@@ -63,11 +69,9 @@ except Exception:
     print("false"); raise SystemExit
 
 last = pd.to_datetime(hist['Date'].max())
-last_dow = int(last.weekday())  # Mon=0 ... Sun=6
-today  = pd.Timestamp.now(tz=ZoneInfo('Asia/Kolkata'))
-today_dow = int(today.weekday())
-
-# Accept if last data is Friday (4) and today is Friday or Saturday.
+last_dow = int(last.weekday())  # Mon=0..Sun=6
+now = pd.Timestamp.now(tz=tz) if tz else pd.Timestamp.now()
+today_dow = int(now.weekday())
 ok = (last_dow == 4) and (today_dow in (4,5))
 print("true" if ok else "false")
 PY
@@ -76,7 +80,7 @@ PY
           echo "Gate OK? $ok"
 
       - name: Score (weekly pack)
-        if: steps.gate.outputs.ok == 'true'
+        if: ${{ steps.gate.outputs.ok == 'true' }}
         run: |
           python scripts/score_week.py \
             --hist data/prices/bhav_hist.csv \
@@ -85,7 +89,7 @@ PY
             --mode lite
 
       - name: Generate Weekend Brief
-        if: steps.gate.outputs.ok == 'true'
+        if: ${{ steps.gate.outputs.ok == 'true' }}
         run: |
           python scripts/generate_weekly_brief.py \
             --pack out/WEEK_PACK.csv \
@@ -93,14 +97,14 @@ PY
             --rolling false
 
       - name: Stage & commit
-        if: steps.gate.outputs.ok == 'true'
+        if: ${{ steps.gate.outputs.ok == 'true' }}
         run: |
           git add out/WEEK_* data/*status.json
           git diff --staged --quiet && echo "No changes" && exit 0 || true
           git commit -m "Weekend Brief (IST): $(date +'%Y-%m-%d %H:%M')"
 
       - name: Rebase + push (with retries)
-        if: steps.gate.outputs.ok == 'true'
+        if: ${{ steps.gate.outputs.ok == 'true' }}
         run: |
           set -e
           for i in 1 2 3; do
@@ -113,9 +117,9 @@ PY
           done
           exit 1
 
-      # Optional Telegram notification (auto-skips if secrets not set)
+      # Optional Telegram notification (skips if secrets not set)
       - name: Notify Telegram (optional)
-        if: steps.gate.outputs.ok == 'true'
+        if: ${{ steps.gate.outputs.ok == 'true' }}
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
@@ -130,5 +134,5 @@ PY
           fi
 
       - name: Gate result summary
-        if: steps.gate.outputs.ok != 'true'
+        if: ${{ steps.gate.outputs.ok != 'true' }}
         run: echo "Skipped: Friday EOD not present yet. Saturday fallback will handle it."
