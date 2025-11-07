@@ -2,32 +2,48 @@ name: Process & Score on Upload
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
     paths:
-      - 'data/prices/*.csv'
+      - 'data/prices/sec_bhavdata_full_*.csv'
+      - 'data/prices/cm*bhav.csv'
       - 'data/*Bulk*.csv'
       - 'data/*Block*.csv'
       - 'data/*Insider*.csv'
-      # exclusions must come AFTER positives (use !)
-      - '!out/**'
-      - '!data/*status.json'
   workflow_dispatch:
 
+# One writer at a time across the repo (prevents push races)
 concurrency:
-  group: process-on-upload
-  cancel-in-progress: false
+  group: repo-writes-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    permissions:
+      contents: write
     env:
       TZ: Asia/Kolkata
+      PYTHONIOENCODING: utf-8
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure git (identity + rebase pulls)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git config pull.rebase true
+
+      - name: Pre-commit sync (pull --rebase)
+        run: |
+          git fetch origin ${{ github.ref_name }}
+          git pull --rebase origin ${{ github.ref_name }} || true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -37,52 +53,18 @@ jobs:
       - name: Install deps
         run: pip install -r requirements.txt
 
-      - name: Process EOD
+      - name: Process EOD → build history/indicators/status
         run: |
           python scripts/process_eod.py \
             --in data/prices \
             --out data \
             --asof auto
 
-      - name: Write bhav_latest.csv from bhav_hist.csv
+      - name: Write bhav_latest.csv (for V1 bridge)
         run: |
-          python - <<'PY'
-          import pandas as pd
-          from datetime import datetime
-          hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
-          if hist.empty:
-              raise SystemExit("bhav_hist.csv is empty; cannot write bhav_latest.csv")
+          python scripts/write_bhav_latest.py --schema normalized
 
-          last = hist['Date'].max()
-          snap = hist[hist['Date'] == last].copy()
-
-          # --- Stable, normalized schema for V1/V2 ---
-          # If your V1 expects the old cm*bhav headers, see the alternative mapping below.
-          cols = ['Date','Symbol','Series','Open','High','Low','Close','PrevClose','Volume','Turnover']
-          missing = [c for c in cols if c not in snap.columns]
-          if missing:
-              raise SystemExit(f"Missing columns in bhav_hist.csv: {missing}")
-
-          out = snap[cols].sort_values(['Symbol','Series'])
-          out.to_csv('data/prices/bhav_latest.csv', index=False)
-
-          print(f"Wrote data/prices/bhav_latest.csv for {last.date()} with {len(out)} rows.")
-          PY
-
-      - name: Assert bhav_latest.csv matches hist max date
-        run: |
-          python - <<'PY'
-          import pandas as pd, sys
-          hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
-          latest = pd.read_csv('data/prices/bhav_latest.csv', parse_dates=['Date'], dayfirst=False)
-          d_hist = hist['Date'].max().date()
-          d_latest = latest['Date'].max().date() if 'Date' in latest.columns else None
-          if d_latest != d_hist:
-              sys.exit(f"bhav_latest.csv date {d_latest} != hist max {d_hist}")
-          print(f"OK: bhav_latest.csv is current ({d_hist})")
-          PY
-
-      - name: Score weekly pack (Lite)
+      - name: Score weekly pack (Lite model)
         run: |
           python scripts/score_week.py \
             --hist data/prices/bhav_hist.csv \
@@ -97,26 +79,29 @@ jobs:
             --out out/WEEK_BRIEF.md \
             --rolling true
 
-      - name: Commit outputs
+      - name: Stage results
         run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions[bot]"
           git add data/prices/bhav_hist.csv data/tech_latest.csv data/highlow_52w.csv
           git add data/prices/bhav_latest.csv
-          git add data/*status.json out/*
-          git commit -m "Auto: process & score on upload $GITHUB_SHA" || echo "Nothing to commit"
-          git push
+          git add data/*status.json out/* || true
+          git status --porcelain
 
-
-      # Optional Telegram ping (set repo secrets TG_BOT_TOKEN, TG_CHAT_ID)
-      - name: Notify Telegram (optional)
-        if: always()
-        env:
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      - name: Commit (skip if no changes)
         run: |
-          if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
-            MSG="✅ StakeLens updated: $(date +'%Y-%m-%d %H:%M IST')%0A• WEEK_PACK.csv refreshed%0A• Brief: (see repo /out/)"
-            curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
-              -d "chat_id=$TG_CHAT_ID" -d "text=$MSG" -d "parse_mode=HTML" >/dev/null || true
-          fi
+          git diff --staged --quiet && echo "No changes to commit" && exit 0 || true
+          git commit -m "Auto: process & score on upload ${GITHUB_SHA}"
+
+      - name: Post-commit rebase + push with retries
+        run: |
+          set -e
+          for i in 1 2 3; do
+            git fetch origin ${{ github.ref_name }}
+            git pull --rebase --autostash origin ${{ github.ref_name }} || true
+            if git push origin HEAD:${{ github.ref_name }}; then
+              echo "Push succeeded on attempt #$i"
+              exit 0
+            fi
+            echo "Push failed, retrying ($i/3)…"
+            sleep 3
+          done
+          echo "Push failed after 3 attempts"; exit 1
