@@ -3,51 +3,58 @@ name: Weekend Weekly Brief
 on:
   schedule:
     - cron: '30 13 * * 5'   # Friday 19:00 IST
-    - cron: '30 0 * * 6'    # Saturday 06:00 IST (fallback)
+    - cron: '30 0 * * 6'    # Saturday 06:00 IST fallback
   workflow_dispatch:
+
+concurrency:
+  group: repo-writes-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   brief:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       TZ: Asia/Kolkata
+      PYTHONIOENCODING: utf-8
+
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 1 }
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git config pull.rebase true
+          git fetch origin ${{ github.ref_name }}
+          git pull --rebase origin ${{ github.ref_name }} || true
+
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
+        with:
+          python-version: '3.11'
       - run: pip install -r requirements.txt
 
-      # Gate: ensure we have Friday’s data when running Friday; else let Saturday handle it.
-      - name: Ensure latest is Friday (or allow Saturday)
+      - name: Gate: ensure Friday data exists (or allow Sat)
         id: gate
         shell: bash
         run: |
-          PY=$(cat <<'PYCODE'
-          import pandas as pd, sys, datetime as dt
+          python - <<'PY'
+          import pandas as pd
+          from zoneinfo import ZoneInfo
           hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
           last = hist['Date'].max()
-          dow  = last.weekday()  # Mon=0 ... Sun=6
-          today = pd.Timestamp.now(tz='Asia/Kolkata').weekday()
-          # If Friday run, require last DOW==4 (Fri). If Saturday, allow last==Fri as well.
-          # We'll pass a flag 'ok' to shell.
-          is_fri_data = (dow == 4)
-          print(f"LAST_DATE={last.date()}")
-          print(f"LAST_DOW={dow}")
-          print(f"OK={(is_fri_data or today==5)}")
-          PYCODE
-          )
-          python - <<<$PY | tee gate.txt
-          source gate.txt
+          dow  = pd.Timestamp(last).weekday()
+          today_dow = pd.Timestamp.now(tz=ZoneInfo('Asia/Kolkata')).weekday()
+          ok = (dow == 4) or (today_dow == 5)
+          print(f"::set-output name=ok::{str(ok).lower()}")
+          PY
 
-          if [[ "$OK" != "True" ]]; then
-            echo "Friday brief skipped: Friday bhav not found yet."
-            echo "ok=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          echo "ok=true" >> $GITHUB_OUTPUT
-
-      - name: Generate full Weekend Brief
+      - name: Score + generate brief
         if: steps.gate.outputs.ok == 'true'
         run: |
           python scripts/score_week.py \
@@ -55,17 +62,28 @@ jobs:
             --tech data/tech_latest.csv \
             --out out \
             --mode lite
-
           python scripts/generate_weekly_brief.py \
             --pack out/WEEK_PACK.csv \
             --out out/WEEK_BRIEF.md \
             --rolling false
 
-      - name: Commit Weekend Brief
+      - name: Stage & commit
         if: steps.gate.outputs.ok == 'true'
         run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions[bot]"
           git add out/WEEK_* data/*status.json
+          git diff --staged --quiet && echo "No changes" && exit 0 || true
           git commit -m "Weekend Brief: $(date -u +'%Y-%m-%dT%H:%MZ')"
-          git push
+
+      - name: Rebase + push with retries
+        if: steps.gate.outputs.ok == 'true'
+        run: |
+          set -e
+          for i in 1 2 3; do
+            git fetch origin ${{ github.ref_name }}
+            git pull --rebase --autostash origin ${{ github.ref_name }} || true
+            if git push origin HEAD:${{ github.ref_name }}; then
+              echo "Push ok (#$i)"; exit 0
+            fi
+            echo "Push failed, retrying ($i/3)…"; sleep 3
+          done
+          exit 1
