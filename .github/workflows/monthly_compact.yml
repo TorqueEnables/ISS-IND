@@ -5,22 +5,37 @@ on:
     - cron: '30 22 1 * *'   # 04:00 IST on the 1st
   workflow_dispatch:
 
+concurrency:
+  group: repo-writes-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   compact:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
-      RETAIN_COUNT: '30'     # change to 45/60 if you want a longer runway
+      RETAIN_COUNT: '30'
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git config pull.rebase true
+          git fetch origin ${{ github.ref_name }}
+          git pull --rebase origin ${{ github.ref_name }} || true
 
       - name: Keep only last ${{ env.RETAIN_COUNT }} raw bhav CSVs
         shell: bash
         run: |
           set -e
           keep="${RETAIN_COUNT:-30}"
-
-          # Patterns we recognize for raw bhavs
           for pattern in "data/prices/sec_bhavdata_full_*.csv" "data/prices/cm"*bhav.csv; do
             mapfile -t files < <(ls -1t $pattern 2>/dev/null || true)
             if [ ${#files[@]} -gt $keep ]; then
@@ -32,9 +47,46 @@ jobs:
             fi
           done
 
-      - name: Commit cleanup
+      - name: Compact corporate flows to last 180 days (optional)
+        shell: bash
         run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions[bot]"
-          git commit -m "Housekeeping: keep last ${RETAIN_COUNT} raw bhav CSVs; prune older" || echo "Nothing to commit"
-          git push
+          python - <<'PY'
+          import pandas as pd, pathlib as P
+          cutoff = pd.Timestamp.today().normalize() - pd.Timedelta(days=180)
+          for f in list(P.Path('data').glob('*Bulk*.csv')) + list(P.Path('data').glob('*Block*.csv')) + list(P.Path('data').glob('*Insider*.csv')):
+              try:
+                  df = pd.read_csv(f)
+                  dcols = [c for c in df.columns if 'date' in c.lower()]
+                  if not dcols: 
+                      continue
+                  dcol = dcols[0]
+                  df[dcol] = pd.to_datetime(df[dcol], errors='coerce')
+                  df = df.dropna(subset=[dcol])
+                  df = df[df[dcol] >= cutoff].copy()
+                  tcols = [c for c in df.columns if df[c].dtype == object]
+                  keys  = [dcol] + (tcols[:1] if tcols else [])
+                  df = df.drop_duplicates(subset=keys)
+                  df.to_csv(f, index=False)
+                  print(f"Compacted {f} to {len(df)} rows (>= {cutoff.date()})")
+              except Exception as e:
+                  print(f"Skip {f}: {e}")
+          PY
+
+      - name: Stage & commit
+        run: |
+          git add -A data/*
+          git diff --staged --quiet && echo "No changes" && exit 0 || true
+          git commit -m "Housekeeping: keep last ${RETAIN_COUNT} raw bhavs; compact flows"
+
+      - name: Rebase + push with retries
+        run: |
+          set -e
+          for i in 1 2 3; do
+            git fetch origin ${{ github.ref_name }}
+            git pull --rebase --autostash origin ${{ github.ref_name }} || true
+            if git push origin HEAD:${{ github.ref_name }}; then
+              echo "Push ok (#$i)"; exit 0
+            fi
+            echo "Push failed, retrying ($i/3)…"; sleep 3
+          done
+          exit 1
