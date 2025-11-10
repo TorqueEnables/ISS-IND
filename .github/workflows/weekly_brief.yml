@@ -42,45 +42,58 @@ jobs:
           python-version: '3.11'
 
       - name: Install requirements
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      # Gate: run only if the latest date in bhav_hist.csv is a Friday (4),
-      # and today (IST) is Fri or Sat. This avoids publishing mid-week.
-      - name: Gate (need Friday EOD present)
+      # Gate: allow publish if latest trading day is Fri, OR (holiday case) Thu,
+      # and today (IST) is Fri or Sat, and the gap <= 3 days.
+      - name: Gate (need latest EOD ~ Friday window)
         id: gate
         shell: bash
         run: |
           set -euo pipefail
-          ok="$(
-            python - <<'PY'
+          read -r ok last_date last_dow today_dow gap <<EOF
+          $(python - <<'PY'
 import pandas as pd
+from datetime import timedelta
 try:
     from zoneinfo import ZoneInfo
     tz = ZoneInfo("Asia/Kolkata")
 except Exception:
     tz = None
 
+def out(s): print(s, end='')
+
 try:
     hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
-    if hist.empty:
-        print("false"); raise SystemExit
+    if hist.empty: out("false NA NA NA NA"); raise SystemExit
 except Exception:
-    print("false"); raise SystemExit
+    out("false NA NA NA NA"); raise SystemExit
 
 last = pd.to_datetime(hist['Date'].max())
-last_is_fri = (int(last.weekday()) == 4)  # Mon=0..Sun=6
+last_dow = int(last.weekday())                 # Mon=0..Sun=6
 now = pd.Timestamp.now(tz=tz) if tz else pd.Timestamp.now()
-today_is_fri_or_sat = int(now.weekday()) in (4, 5)
+today_dow = int(now.weekday())
+gap_days = int((now.normalize() - last.normalize()).days)
 
-print("true" if (last_is_fri and today_is_fri_or_sat) else "false")
+# Accept if (today is Fri/Sat) AND (last day is Fri or Thu) AND (gap <= 3 days)
+ok = (today_dow in (4,5)) and (last_dow in (3,4)) and (gap_days <= 3)
+
+out( f"{'true' if ok else 'false'} {last.date()} {last_dow} {today_dow} {gap_days}" )
 PY
-          )"
+          )
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
-          echo "Gate OK? $ok"
+          echo "last_date=$last_date" >> "$GITHUB_OUTPUT"
+          echo "last_dow=$last_dow" >> "$GITHUB_OUTPUT"
+          echo "today_dow=$today_dow" >> "$GITHUB_OUTPUT"
+          echo "gap_days=$gap" >> "$GITHUB_OUTPUT"
+          echo "Gate -> ok=$ok last=$last_date (dow=$last_dow) today_dow=$today_dow gap_days=$gap"
 
       - name: Score (weekly pack)
         if: ${{ steps.gate.outputs.ok == 'true' }}
         run: |
+          mkdir -p out
           python scripts/score_week.py \
             --hist data/prices/bhav_hist.csv \
             --tech data/tech_latest.csv \
@@ -90,6 +103,7 @@ PY
       - name: Generate Weekend Brief
         if: ${{ steps.gate.outputs.ok == 'true' }}
         run: |
+          mkdir -p out
           python scripts/generate_weekly_brief.py \
             --pack out/WEEK_PACK.csv \
             --out out/WEEK_BRIEF.md \
@@ -98,7 +112,12 @@ PY
       - name: Stage & commit
         if: ${{ steps.gate.outputs.ok == 'true' }}
         run: |
-          git add out/WEEK_* data/*status.json
+          set -e
+          mkdir -p out
+          # Robust adds: don't die if globs are empty
+          git add -A out || true
+          git add data/*status.json 2>/dev/null || true
+          git status --porcelain
           git diff --staged --quiet && echo "No changes" && exit 0 || true
           git commit -m "Weekend Brief (IST): $(date +'%Y-%m-%d %H:%M')"
 
@@ -134,4 +153,6 @@ PY
 
       - name: Gate result summary
         if: ${{ steps.gate.outputs.ok != 'true' }}
-        run: echo "Skipped: Friday EOD not present yet. Saturday fallback will handle it."
+        run: |
+          echo "Skipped: Weekend brief gate failed."
+          echo "Debug -> last=${{ steps.gate.outputs.last_date }} (dow=${{ steps.gate.outputs.last_dow }}) today_dow=${{ steps.gate.outputs.today_dow }} gap_days=${{ steps.gate.outputs.gap_days }}"
