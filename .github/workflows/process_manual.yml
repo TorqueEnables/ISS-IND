@@ -50,6 +50,23 @@ jobs:
           commit_user_name: github-actions[bot]
           commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
 
+      - name: Score weekly pack (Lite)
+        run: |
+          mkdir -p out
+          python scripts/score_week.py \
+            --hist data/prices/bhav_hist.csv \
+            --tech data/tech_latest.csv \
+            --out out \
+            --mode lite
+
+      - name: Generate weekly brief (updates every upload)
+        run: |
+          mkdir -p out
+          python scripts/generate_weekly_brief.py \
+            --pack out/WEEK_PACK.csv \
+            --tech data/tech_latest.csv \
+            --out out/WEEK_BRIEF.md
+
       - name: Show status
         run: |
           echo "::group::process_status.json"
