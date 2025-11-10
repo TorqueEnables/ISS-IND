@@ -10,6 +10,10 @@ concurrency:
   group: repo-writes-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   brief:
     runs-on: ubuntu-latest
@@ -46,16 +50,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Gate: allow publish if latest trading day is Fri, OR (holiday case) Thu,
-      # and today (IST) is Fri or Sat, and the gap <= 3 days.
-      - name: Gate (need latest EOD ~ Friday window)
+      # Gate: allow publish if latest trading day is Fri or (Thu for Fri holiday),
+      # today (IST) is Fri/Sat, and the gap <= 3 days.
+      - name: Gate (weekend publish window)
         id: gate
-        shell: bash
         run: |
           set -euo pipefail
-          read -r ok last_date last_dow today_dow gap <<EOF
-          $(python - <<'PY'
-import pandas as pd
+          python - "$GITHUB_OUTPUT" <<'PY'
+import pandas as pd, sys
 from datetime import timedelta
 try:
     from zoneinfo import ZoneInfo
@@ -63,13 +65,17 @@ try:
 except Exception:
     tz = None
 
-def out(s): print(s, end='')
+def write_out(kv):
+    with open(sys.argv[1], "a", encoding="utf-8") as f:
+        for k,v in kv.items():
+            print(f"{k}={v}", file=f)
 
 try:
     hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
-    if hist.empty: out("false NA NA NA NA"); raise SystemExit
+    assert not hist.empty
 except Exception:
-    out("false NA NA NA NA"); raise SystemExit
+    write_out({"ok":"false","last_date":"NA","last_dow":"NA","today_dow":"NA","gap_days":"NA"})
+    sys.exit(0)
 
 last = pd.to_datetime(hist['Date'].max())
 last_dow = int(last.weekday())                 # Mon=0..Sun=6
@@ -77,18 +83,19 @@ now = pd.Timestamp.now(tz=tz) if tz else pd.Timestamp.now()
 today_dow = int(now.weekday())
 gap_days = int((now.normalize() - last.normalize()).days)
 
-# Accept if (today is Fri/Sat) AND (last day is Fri or Thu) AND (gap <= 3 days)
 ok = (today_dow in (4,5)) and (last_dow in (3,4)) and (gap_days <= 3)
 
-out( f"{'true' if ok else 'false'} {last.date()} {last_dow} {today_dow} {gap_days}" )
+write_out({
+    "ok": "true" if ok else "false",
+    "last_date": str(last.date()),
+    "last_dow": str(last_dow),
+    "today_dow": str(today_dow),
+    "gap_days": str(gap_days),
+})
 PY
-          )
-          echo "ok=$ok" >> "$GITHUB_OUTPUT"
-          echo "last_date=$last_date" >> "$GITHUB_OUTPUT"
-          echo "last_dow=$last_dow" >> "$GITHUB_OUTPUT"
-          echo "today_dow=$today_dow" >> "$GITHUB_OUTPUT"
-          echo "gap_days=$gap" >> "$GITHUB_OUTPUT"
-          echo "Gate -> ok=$ok last=$last_date (dow=$last_dow) today_dow=$today_dow gap_days=$gap"
+          echo "----- Gate outputs -----"
+          echo "ok=${{ steps.gate.outputs.ok }}"
+          echo "last_date=${{ steps.gate.outputs.last_date }} last_dow=${{ steps.gate.outputs.last_dow }} today_dow=${{ steps.gate.outputs.today_dow }} gap_days=${{ steps.gate.outputs.gap_days }}"
 
       - name: Score (weekly pack)
         if: ${{ steps.gate.outputs.ok == 'true' }}
@@ -114,7 +121,6 @@ PY
         run: |
           set -e
           mkdir -p out
-          # Robust adds: don't die if globs are empty
           git add -A out || true
           git add data/*status.json 2>/dev/null || true
           git status --porcelain
@@ -143,7 +149,7 @@ PY
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
-            MSG="📣 Weekend Brief posted — $(date +'%Y-%m-%d %H:%M IST')%0A• WEEK_PACK.csv and WEEK_BRIEF.md updated"
+            MSG="Weekend Brief posted — $(date +'%Y-%m-%d %H:%M IST')%0A• WEEK_PACK.csv and WEEK_BRIEF.md updated"
             curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage" \
               -d "chat_id=$TG_CHAT_ID" \
               -d "text=$MSG" >/dev/null || true
@@ -154,5 +160,5 @@ PY
       - name: Gate result summary
         if: ${{ steps.gate.outputs.ok != 'true' }}
         run: |
-          echo "Skipped: Weekend brief gate failed."
-          echo "Debug -> last=${{ steps.gate.outputs.last_date }} (dow=${{ steps.gate.outputs.last_dow }}) today_dow=${{ steps.gate.outputs.today_dow }} gap_days=${{ steps.gate.outputs.gap_days }}"
+          echo "Skipped: gate=false. Details:"
+          echo "last_date=${{ steps.gate.outputs.last_date }} last_dow=${{ steps.gate.outputs.last_dow }} today_dow=${{ steps.gate.outputs.today_dow }} gap_days=${{ steps.gate.outputs.gap_days }}"
