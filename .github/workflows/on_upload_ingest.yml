@@ -4,14 +4,13 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'data/prices/sec_bhavdata_full_*.csv'
-      - 'data/prices/cm*bhav.csv'
-      - 'data/*Bulk*.csv'
+      - 'data/prices/sec_bhavdata_full_*.csv'  # official consolidated bhav
+      - 'data/prices/cm*bhav.csv'              # alt bhav naming (unzipped)
+      - 'data/*Bulk*.csv'                      # corporate flows (raw)
       - 'data/*Block*.csv'
       - 'data/*Insider*.csv'
   workflow_dispatch:
 
-# One writer at a time across the repo (prevents push races)
 concurrency:
   group: repo-writes-${{ github.ref }}
   cancel-in-progress: true
@@ -19,7 +18,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: write
     env:
@@ -33,15 +32,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Configure git (identity + rebase pulls)
+      - name: Configure git
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git config pull.rebase true
-
-      - name: Pre-commit sync (pull --rebase)
-        run: |
           git fetch origin ${{ github.ref_name }}
           git pull --rebase origin ${{ github.ref_name }} || true
 
@@ -50,8 +46,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install deps
-        run: pip install -r requirements.txt
+      - name: Install requirements
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Process EOD → build history/indicators/status
         run: |
@@ -60,48 +58,50 @@ jobs:
             --out data \
             --asof auto
 
-      - name: Write bhav_latest.csv (for V1 bridge)
+      - name: Write bhav_latest.csv (V1 bridge)
         run: |
           python scripts/write_bhav_latest.py --schema normalized
 
-      - name: Score weekly pack (Lite model)
+      - name: Score weekly pack (Lite)
         run: |
+          mkdir -p out
           python scripts/score_week.py \
             --hist data/prices/bhav_hist.csv \
             --tech data/tech_latest.csv \
             --out out \
             --mode lite
 
-      - name: Rolling brief (optional)
+      - name: Generate weekly brief (updates every upload)
         run: |
+          mkdir -p out
           python scripts/generate_weekly_brief.py \
             --pack out/WEEK_PACK.csv \
-            --out out/WEEK_BRIEF.md \
-            --rolling true
+            --tech data/tech_latest.csv \
+            --out out/WEEK_BRIEF.md
 
       - name: Stage results
         run: |
-          git add data/prices/bhav_hist.csv data/tech_latest.csv data/highlow_52w.csv
-          git add data/prices/bhav_latest.csv
-          git add data/*status.json out/* || true
+          set -e
+          git add data/prices/bhav_hist.csv data/tech_latest.csv data/highlow_52w.csv 2>/dev/null || true
+          git add data/prices/bhav_latest.csv 2>/dev/null || true
+          git add data/*status.json 2>/dev/null || true
+          git add out 2>/dev/null || true
           git status --porcelain
 
       - name: Commit (skip if no changes)
         run: |
           git diff --staged --quiet && echo "No changes to commit" && exit 0 || true
-          git commit -m "Auto: process & score on upload ${GITHUB_SHA}"
+          git commit -m "Auto: process, score & rebuild weekly brief on ${GITHUB_SHA}"
 
-      - name: Post-commit rebase + push with retries
+      - name: Rebase + push (with retries)
         run: |
           set -e
           for i in 1 2 3; do
             git fetch origin ${{ github.ref_name }}
             git pull --rebase --autostash origin ${{ github.ref_name }} || true
             if git push origin HEAD:${{ github.ref_name }}; then
-              echo "Push succeeded on attempt #$i"
-              exit 0
+              echo "Push ok (#$i)"; exit 0
             fi
-            echo "Push failed, retrying ($i/3)…"
-            sleep 3
+            echo "Push failed, retrying ($i/3)…"; sleep 3
           done
-          echo "Push failed after 3 attempts"; exit 1
+          exit 1
