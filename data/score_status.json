@@ -1,15 +1,15 @@
 {
   "ok": true,
-  "when": "2025-11-10T13:38:19.772818Z",
+  "when": "2025-11-10T13:46:54.960514Z",
   "note": "",
-  "latest_day": "2025-11-06",
-  "rows": 3043,
+  "latest_day": "2025-11-10",
+  "rows": 3065,
   "top5": [
     "DHTL",
-    "GROWWMOM50",
-    "PROV",
-    "TIMKEN",
-    "AIRTELPP"
+    "ALBERTDAVD",
+    "MAFANG",
+    "ARTEMISMED",
+    "BANKINDIA"
   ],
   "out": "out/WEEK_PACK.csv",
   "diag": {
@@ -22,10 +22,10 @@
       "block": "data/block_deals_latest.csv"
     },
     "input_rows": {
-      "hist": 257833,
-      "tech": 3043,
-      "hi52": 3268,
-      "deliv": 3043,
+      "hist": 260896,
+      "tech": 3065,
+      "hi52": 3275,
+      "deliv": 3065,
       "bulk": 18236,
       "block": 1947
     }
