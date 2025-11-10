@@ -44,8 +44,8 @@ jobs:
       - name: Install requirements
         run: pip install -r requirements.txt
 
-      # Gate: proceed only if the latest date in bhav_hist.csv is Friday (4),
-      # and today (IST) is Friday or Saturday.
+      # Gate: run only if the latest date in bhav_hist.csv is a Friday (4),
+      # and today (IST) is Fri or Sat. This avoids publishing mid-week.
       - name: Gate (need Friday EOD present)
         id: gate
         shell: bash
@@ -54,12 +54,11 @@ jobs:
           ok="$(
             python - <<'PY'
 import pandas as pd
-from datetime import datetime
 try:
     from zoneinfo import ZoneInfo
     tz = ZoneInfo("Asia/Kolkata")
 except Exception:
-    tz = None  # fallback: naive
+    tz = None
 
 try:
     hist = pd.read_csv('data/prices/bhav_hist.csv', parse_dates=['Date'])
@@ -69,11 +68,11 @@ except Exception:
     print("false"); raise SystemExit
 
 last = pd.to_datetime(hist['Date'].max())
-last_dow = int(last.weekday())  # Mon=0..Sun=6
+last_is_fri = (int(last.weekday()) == 4)  # Mon=0..Sun=6
 now = pd.Timestamp.now(tz=tz) if tz else pd.Timestamp.now()
-today_dow = int(now.weekday())
-ok = (last_dow == 4) and (today_dow in (4,5))
-print("true" if ok else "false")
+today_is_fri_or_sat = int(now.weekday()) in (4, 5)
+
+print("true" if (last_is_fri and today_is_fri_or_sat) else "false")
 PY
           )"
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
