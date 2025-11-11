@@ -1,275 +1,382 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-StakeLens — Weekly Scoring & Ranking (self-healing; zero network)
-
-If inputs are missing/empty, this script will call process_eod.py to regenerate
-derived files, then continue. Produces out/WEEK_PACK.csv and data/score_status.json.
+Score weekly candidates directly from bhav_hist.csv
+- Robust: no external "tech_latest" required.
+- Simple: one entry-point, one output (out/WEEK_PACK.csv).
+- Quality: hard universe & liquidity gates + power/squeeze/RS structure.
 """
 
-from __future__ import annotations
-import os, json, subprocess
-from datetime import datetime, timedelta
-from typing import Optional, Dict
-import pandas as pd
+import argparse, re, math
+from pathlib import Path
 import numpy as np
+import pandas as pd
 
-DATA_DIR   = "data"
-PRICES_DIR = os.path.join(DATA_DIR, "prices")
-OUT_DIR    = "out"
-STATUS_F   = os.path.join(DATA_DIR, "score_status.json")
-os.makedirs(OUT_DIR, exist_ok=True)
+# ---------------------------
+# Config (defaults; override via CLI if you want)
+# ---------------------------
+MIN_CLOSE            = 50.0         # price floor
+TURNOVER_CR_20_FLOOR = 5.0          # ₹ cr median over 20d
+DELIV_CR_20_FLOOR    = 2.0          # ₹ cr median over 20d
+ATR_PCT_MIN          = 0.02         # 2%
+ATR_PCT_MAX          = 0.08         # 8%
+TOP_LIMIT            = 50           # write this many ranked rows
 
-# ---------- robust CSV reader ----------
-def read_csv_robust(path: str) -> Optional[pd.DataFrame]:
-    if not os.path.exists(path): return None
-    for opts in ({}, {"encoding":"utf-8-sig"}, {"encoding":"latin-1"}):
-        try:
-            return pd.read_csv(path, **opts)
-        except Exception:
-            pass
-    return None
+ETF_REGEX = re.compile(
+    r'(ETF|BEES|MOM|GOLD|SILVER|CPSE|PSU|FUND|FOF|NIFTY|SENSEX|JUNIOR|NEXT|TRI)$',
+    re.IGNORECASE
+)
 
-def rows_of(path: str) -> int:
-    df = read_csv_robust(path)
-    return 0 if df is None else int(len(df))
-
-def ensure_inputs_or_heal(diag: dict) -> Dict[str, Optional[pd.DataFrame]]:
-    """Return dict of dataframes; if missing/empty -> run process_eod.py -> reload."""
-    need_heal = False
-    paths = {
-        "hist": os.path.join(PRICES_DIR, "bhav_hist.csv"),
-        "tech": os.path.join(DATA_DIR, "tech_latest.csv"),
-        "hi52": os.path.join(DATA_DIR, "highlow_52w.csv"),
-        "deliv": os.path.join(DATA_DIR, "deliverables_latest.csv"),
-        "bulk": os.path.join(DATA_DIR, "bulk_deals_latest.csv"),
-        "block": os.path.join(DATA_DIR, "block_deals_latest.csv"),
-    }
-    diag["inputs_seen"] = {k: (paths[k] if os.path.exists(paths[k]) else None) for k in paths}
-    diag["input_rows"]  = {k: rows_of(paths[k]) if os.path.exists(paths[k]) else 0 for k in paths}
-
-    # heal if critical inputs are missing/empty
-    if diag["input_rows"]["hist"] == 0 or diag["input_rows"]["tech"] == 0:
-        need_heal = True
-
-    if need_heal:
-        try:
-            subprocess.run(["python","scripts/process_eod.py"], check=False, timeout=120)
-        except Exception as e:
-            diag["heal_error"] = f"{type(e).__name__}: {e}"
-
-        # reload row counts
-        diag["input_rows_after_heal"] = {k: rows_of(paths[k]) if os.path.exists(paths[k]) else 0 for k in paths}
-
-    # finally load dfs
-    dfs = {k: read_csv_robust(p) for k, p in paths.items()}
-    # attempt insider latest by common names
-    ins = None
-    for nm in ["CF-Insider-Trading-equities-latest.csv","cf-insider-trading-equities-latest.csv"]:
-        p = os.path.join(DATA_DIR, nm)
-        if os.path.exists(p):
-            ins = read_csv_robust(p)
-            break
-    dfs["ins"] = ins
-    return dfs
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--hist", default="data/prices/bhav_hist.csv")
+    p.add_argument("--out",  default="out/WEEK_PACK.csv")
+    p.add_argument("--min_close", type=float, default=MIN_CLOSE)
+    p.add_argument("--turnover_cr_20", type=float, default=TURNOVER_CR_20_FLOOR)
+    p.add_argument("--deliv_cr_20", type=float, default=DELIV_CR_20_FLOOR)
+    p.add_argument("--atr_min", type=float, default=ATR_PCT_MIN)
+    p.add_argument("--atr_max", type=float, default=ATR_PCT_MAX)
+    p.add_argument("--top", type=int, default=TOP_LIMIT)
+    return p.parse_args()
 
 # ---------- helpers ----------
-def pct_rank(s: pd.Series) -> pd.Series:
-    return s.rank(pct=True, method="average")
+def pick(colnames, cols):
+    for c in colnames:
+        if c in cols: return c
+    return None
 
-def compute_recent_hi55(hist: pd.DataFrame) -> pd.DataFrame:
-    df = hist.copy()
-    df["Date"] = pd.to_datetime(df["Date"])
-    df = df.sort_values(["Symbol","Date"])
-    g = df.groupby("Symbol", group_keys=False)
-    roll_hi55 = g["High"].rolling(55, min_periods=55).max().reset_index(level=0, drop=True)
-    df["HI55_Flag"] = (df["High"] == roll_hi55)
-    # last row per symbol (contains max date + aligned rolling max for that row)
-    last = df.groupby("Symbol", as_index=False).tail(1).copy()
-    last["HI55_Px"] = roll_hi55.groupby(df["Symbol"]).tail(1).values
-    # find last HI55 date per symbol
-    hi_idx = df[df["HI55_Flag"]].groupby("Symbol")["Date"].max().rename("HI55_LastDate")
-    last = last.merge(hi_idx, on="Symbol", how="left")
-    return last[["Symbol","Date","HI55_LastDate","HI55_Px"]]
+def zscore(x: pd.Series):
+    mu = x.mean()
+    sd = x.std(ddof=0)
+    if sd == 0 or np.isnan(sd): return (x*0).fillna(0)
+    return (x - mu) / sd
+
+def true_range(df):
+    prev_close = df["Close"].shift(1)
+    tr = pd.concat([
+        df["High"] - df["Low"],
+        (df["High"] - prev_close).abs(),
+        (df["Low"] - prev_close).abs()
+    ], axis=1).max(axis=1)
+    return tr
+
+def rolling_median_cr(series, window):
+    # value is rupees → convert to ₹ cr
+    s = series.rolling(window, min_periods=window).median() / 1e7
+    return s
+
+def rolling_percentile_last(series, lookback=120):
+    """Percentile of the last value vs the last N values (0..1).
+       Computes only for the final row per group to keep it light."""
+    if len(series) < 3:
+        return np.nan
+    tail = series.tail(lookback)
+    last = tail.iloc[-1]
+    rank = (tail <= last).sum()
+    return float(rank) / float(len(tail))
+
+def safe_div(a, b):
+    with np.errstate(divide='ignore', invalid='ignore'):
+        r = np.where(b==0, np.nan, a/b)
+    return r
+
+def clip(x, lo, hi):
+    return max(lo, min(hi, x))
 
 # ---------- main ----------
 def main():
-    status = {"ok": False, "when": datetime.utcnow().isoformat()+"Z", "note": ""}
+    args = parse_args()
+    hist_path = Path(args.hist)
+    out_path  = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    diag = {}
-    dfs = ensure_inputs_or_heal(diag)
-    tech = dfs["tech"]; hist = dfs["hist"]
+    if not hist_path.exists():
+        raise SystemExit(f"Missing {hist_path}")
 
-    if tech is None or hist is None or tech.empty or hist.empty:
-        status.update({
-            "ok": False,
-            "error": "Missing tech_latest or bhav_hist after heal",
-            "diag": diag
-        })
-        with open(STATUS_F, "w", encoding="utf-8") as f: json.dump(status, f, indent=2)
-        print(json.dumps(status, indent=2))
-        return 1
+    df = pd.read_csv(hist_path, parse_dates=["Date"])
+    if df.empty:
+        raise SystemExit("bhav_hist.csv is empty")
 
-    # parse dates & sort
-    tech["Date"] = pd.to_datetime(tech["Date"], errors="coerce")
-    hist["Date"] = pd.to_datetime(hist["Date"], errors="coerce")
-    tech = tech.dropna(subset=["Date","Symbol"]).copy()
-    hist = hist.dropna(subset=["Date","Symbol"]).copy()
-    latest_day = pd.to_datetime(tech["Date"].max())
+    # Canonicalize columns (accept both normalized and cm* styles)
+    cols = df.columns
+    sym   = pick(["Symbol","SYMBOL","symbol"], cols)
+    ser   = pick(["Series","SERIES"], cols)
+    open_ = pick(["Open","OPEN"], cols)
+    high  = pick(["High","HIGH"], cols)
+    low   = pick(["Low","LOW"], cols)
+    close = pick(["Close","CLOSE","LAST"], cols)
+    prev  = pick(["PrevClose","PREVCLOSE"], cols)
+    vol   = pick(["Volume","TOTTRDQTY"], cols)
+    turn  = pick(["Turnover","TOTTRDVAL"], cols)
 
-    # enrich with HI55 recency
-    hi_rec = compute_recent_hi55(hist)
-    base = tech.merge(hi_rec[["Symbol","HI55_LastDate","HI55_Px"]], on="Symbol", how="left")
-    base["DaysSinceHI55"] = (latest_day - pd.to_datetime(base["HI55_LastDate"])).dt.days
+    # Deliverables (optional)
+    dqty = pick(["DelivQty","DELIV_QTY","DELIV_QTY(ROLLING)","DeliverableQty","DELIVQTY"], cols)
 
-    # ATR% & Delivery% percentiles
-    base["ATR_pct"] = (base["ATR14"] / base["Close"]).replace([np.inf,-np.inf], np.nan)
-    base["ATR_pct_pct"] = pct_rank(base["ATR_pct"].fillna(base["ATR_pct"].median()))
-    if "Delivery_Pct" not in base.columns:
-        d = dfs["deliv"]
-        if d is not None and not d.empty:
-            d["Date"] = pd.to_datetime(d["Date"], errors="coerce")
-            base = base.merge(d[d["Date"]==latest_day][["Symbol","Delivery_Pct"]], on="Symbol", how="left")
-    base["Delivery_pct_pct"] = pct_rank(base["Delivery_Pct"].fillna(base["Delivery_Pct"].median()))
+    need = [sym, ser, open_, high, low, close, prev, vol, turn]
+    if any(c is None for c in need):
+        raise SystemExit(f"bhav_hist.csv missing required columns; got {cols.tolist()}")
 
-    # corporate recency (coarse flags)
-    def recent_flag(df: Optional[pd.DataFrame], date_col_guess=("date","deal_date","traded_date"), days=15):
-        if df is None or df.empty: return pd.DataFrame(columns=["Symbol","flag"])
-        t = df.copy()
-        lc = {c.lower():c for c in t.columns}
-        sym = lc.get("symbol", list(t.columns)[0])
-        t.rename(columns={sym:"Symbol"}, inplace=True)
-        dc = next((lc[k] for k in date_col_guess if k in lc), None)
-        if dc is None: return pd.DataFrame(columns=["Symbol","flag"])
-        t[dc] = pd.to_datetime(t[dc], errors="coerce")
-        recent = t[t[dc] >= (latest_day - pd.Timedelta(days=days))]
-        return (recent.groupby("Symbol").size()>0).rename("flag").reset_index()
+    df = df[[ "Date", sym, ser, open_, high, low, close, prev, vol, turn ] + ([dqty] if dqty else [])].copy()
+    df.columns = ["Date","Symbol","Series","Open","High","Low","Close","PrevClose","Volume","Turnover"] + ([ "DelivQty"] if dqty else [])
+    df.sort_values(["Symbol","Date"], inplace=True)
 
-    bulk_f  = recent_flag(dfs["bulk"], days=15).rename(columns={"flag":"bulk_recent_buy"})
-    block_f = recent_flag(dfs["block"], days=15).rename(columns={"flag":"block_recent_buy"})
-    ins_f   = None
-    if dfs["ins"] is not None and not dfs["ins"].empty:
-        d = dfs["ins"].copy()
-        lc = {c.lower():c for c in d.columns}
-        sym = lc.get("symbol", list(d.columns)[0]); d.rename(columns={sym:"Symbol"}, inplace=True)
-        dtc = next((lc[k] for k in ("date","txn_dt","transaction_date","intimation_date","post_date") if k in lc), None)
-        if dtc:
-            d[dtc] = pd.to_datetime(d[dtc], errors="coerce")
-            recent = d[d[dtc] >= (latest_day - pd.Timedelta(days=45))]
-            ins_f = (recent.groupby("Symbol").size()>0).rename("insider_recent").reset_index()
-    if ins_f is None:
-        ins_f = pd.DataFrame(columns=["Symbol","insider_recent"])
+    # Latest trading day
+    last_day = df["Date"].max()
+    # Universe hygiene (EQ only, equities only, price floor, ETF/index purge)
+    # We compute this on the latest day snapshot
+    snap = df[df["Date"]==last_day].copy()
 
-    base = base.merge(bulk_f, on="Symbol", how="left")
-    base = base.merge(block_f, on="Symbol", how="left")
-    base = base.merge(ins_f,   on="Symbol", how="left")
-    for c in ("bulk_recent_buy","block_recent_buy","insider_recent"):
-        base[c] = base[c].fillna(False)
+    def is_equity_row(row):
+        s = str(row["Series"]).upper()
+        if s != "EQ": return False
+        if float(row["Close"]) < args.min_close: return False
+        if ETF_REGEX.search(str(row["Symbol"])): return False
+        return True
 
-    # trend & penalties
-    base["trend_align"] = (base["Close"]>base["SMA20"]) & (base["Close"]>base["SMA50"]) & (base["SMA20"].diff().fillna(0)>=0)
-    base["nr7_flag"]    = base.get("NR7", False).astype(bool)
-    base["atr_low"]     = base["ATR_pct_pct"].between(0.10, 0.40, inclusive="both")
-    base["delivery_q4"] = (base["Delivery_pct_pct"]>=0.75)
-    base["hi52w_fresh_calm"] = (base.get("HI55_Recent", False).astype(bool)) & (base["ATR_pct"]<=0.03)
-    base["liq_ok"]      = (base["VolAvg20"]>0) & (base["Volume"]>=0.8*base["VolAvg20"])
-    base["extended_bb"] = (base["Close"]> (base["BB_Upper"] + base["ATR14"].fillna(0)))
-    base["below_sma20"] = (base["Close"]< base["SMA20"])
+    snap["UNIVERSE_OK"] = snap.apply(is_equity_row, axis=1)
 
-    # score (weights kept inside for compactness)
-    W = dict(trend_align=15,pullback_hi55=20,nr7=10,atr_low=8,delivery_q4=10,
-             insider_buy=10,bulk_buy=8,block_buy=5,hi52w_near=10,hi52w_fresh_calm=8,liquidity=5,
-             below_sma20=-20,extended_bb=-15)
+    # Merge back to full df for rolling features (keep only symbols in universe on last day)
+    keep_syms = set(snap.loc[snap["UNIVERSE_OK"], "Symbol"])
+    df = df[df["Symbol"].isin(keep_syms)].copy()
 
-    # HI55 pullback + near-52w
-    base["pullback_hi55"] = (
-        (base["DaysSinceHI55"].between(0,10, inclusive="both")) &
-        base["HI55_Px"].notna() &
-        (base["Close"]>= base["HI55_Px"]*0.92) &
-        (base["Close"]<= base["HI55_Px"]*0.98)
+    # Groupby for rolling features
+    g = df.groupby("Symbol", group_keys=False)
+
+    # Moving averages
+    df["SMA10"]  = g["Close"].transform(lambda s: s.rolling(10, min_periods=10).mean())
+    df["SMA20"]  = g["Close"].transform(lambda s: s.rolling(20, min_periods=20).mean())
+    df["SMA50"]  = g["Close"].transform(lambda s: s.rolling(50, min_periods=50).mean())
+    df["SMA200"] = g["Close"].transform(lambda s: s.rolling(200, min_periods=200).mean())
+
+    # ATR14 & ATR%
+    df["TR"]     = g.apply(true_range)
+    df["ATR14"]  = g["TR"].transform(lambda s: s.rolling(14, min_periods=14).mean())
+    df["ATR_PCT"] = df["ATR14"] / df["Close"]
+
+    # Bollinger bandwidth (20, 2σ)
+    def bb_width(s):
+        ma = s.rolling(20, min_periods=20).mean()
+        sd = s.rolling(20, min_periods=20).std(ddof=0)
+        upper = ma + 2*sd
+        lower = ma - 2*sd
+        width = (upper - lower) / ma
+        return width
+    df["BBWidth20"] = g["Close"].transform(bb_width)
+
+    # BB width percentile (last vs its 120-day history), compute only for the last day rows
+    last_rows = df[df["Date"]==last_day].copy()
+    pct_vals = []
+    for symb, sub in df.groupby("Symbol"):
+        s = sub["BBWidth20"].dropna()
+        if s.empty:
+            pct_vals.append((symb, np.nan)); continue
+        pct = rolling_percentile_last(s, lookback=120)
+        pct_vals.append((symb, pct))
+    pct_df = pd.DataFrame(pct_vals, columns=["Symbol","BBWidth_pctile_20"])
+
+    # Liquidity metrics
+    df["TurnoverCr"] = df["Turnover"] / 1e7
+    df["TurnoverCr_med20"] = g["Turnover"].transform(lambda s: s.rolling(20, min_periods=20).median() / 1e7)
+    if "DelivQty" in df.columns:
+        df["DelivValCr"] = (df["DelivQty"] * df["Close"]) / 1e7
+        df["DelivValCr_med20"] = g.apply(lambda d: (d["DelivQty"]*d["Close"]).rolling(20, min_periods=20).median() / 1e7)
+    else:
+        df["DelivValCr_med20"] = np.nan
+
+    # RS metrics: 4W (~20d) and 13W (~65d) returns; z-scored across universe for last day
+    df["RET_20"] = g["Close"].transform(lambda s: s.pct_change(20))
+    df["RET_65"] = g["Close"].transform(lambda s: s.pct_change(65))
+
+    last_rs = df[df["Date"]==last_day][["Symbol","RET_20","RET_65"]].copy()
+    # Exclude NaNs for mean/std
+    last_rs["RS_4W_Z"]  = zscore(last_rs["RET_20"].fillna(0))
+    last_rs["RS_13W_Z"] = zscore(last_rs["RET_65"].fillna(0))
+
+    # Up-volume dominance (10d), PocketPivot (today)
+    # Mark up/down bars
+    df["UpBar"] = df["Close"] > df["PrevClose"]
+    df["DownBar"] = df["Close"] < df["PrevClose"]
+
+    # 10d sums for last day per symbol
+    df["UpVol10"]   = g.apply(lambda d: (d["UpBar"]*d["Volume"]).rolling(10, min_periods=10).sum())
+    df["DownVol10"] = g.apply(lambda d: (d["DownBar"]*d["Volume"]).rolling(10, min_periods=10).sum())
+
+    last_ex = df[df["Date"]==last_day][["Symbol","SMA10","SMA20","SMA50","SMA200","ATR14","ATR_PCT",
+                                        "BBWidth20","TurnoverCr_med20","DelivValCr_med20",
+                                        "UpVol10","DownVol10","Open","High","Low","Close","PrevClose"]].copy()
+    last_ex = last_ex.merge(pct_df, on="Symbol", how="left")
+    last_ex = last_ex.merge(last_rs[["Symbol","RS_4W_Z","RS_13W_Z"]], on="Symbol", how="left")
+
+    # PocketPivot: today's up-vol > max down-vol last 10 AND Close > SMA10
+    # We only have the sum of down-vol; an ok proxy: today's Volume > (DownVol10/10) * k and up bar
+    # Better: recompute max down vol over last 10; approximate by (DownVol10/10)*2
+    df["MaxDownVol10_proxy"] = g["DownBar"].transform(lambda s: s.rolling(10, min_periods=10).sum())  # count only; proxy
+    # We'll compute a simpler PP flag using today's up-bar + UpVol10 > DownVol10 and Close > SMA10
+    last_vol = df[df["Date"]==last_day][["Symbol","Volume","UpBar"]].copy()
+    last_ex = last_ex.merge(last_vol, on="Symbol", how="left")
+    last_ex["UpVolDom10"] = (last_ex["UpVol10"] > last_ex["DownVol10"]).fillna(False)
+    last_ex["PocketPivot10"] = (last_ex["UpBar"] & last_ex["UpVolDom10"] & (last_ex["Close"] > last_ex["SMA10"])).astype(int)
+
+    # Squeeze proxy via percentile (lower is tighter)
+    last_ex["SqueezeScore"] = (1.0 - last_ex["BBWidth_pctile_20"].clip(0,1))  # 0..1
+
+    # Structure flags
+    last_ex["MA_Aligned"] = ((last_ex["SMA20"] > last_ex["SMA50"]) & (last_ex["SMA50"] > last_ex["SMA200"]))
+    # Near 52w high proxy: Close within 3% of max Close in last 252d
+    max_close_252 = g["Close"].transform(lambda s: s.rolling(252, min_periods=60).max())
+    near52 = df[df["Date"]==last_day][["Symbol","Close"]].copy()
+    near52["MaxClose252"] = max_close_252[df["Date"]==last_day].values
+    near52["Near52w"] = (near52["Close"] >= 0.97 * near52["MaxClose252"])
+    last_ex = last_ex.merge(near52[["Symbol","Near52w","MaxClose252"]], on="Symbol", how="left")
+
+    # Family eligibility
+    # 1) Momentum continuation (RS leaders)
+    last_ex["FAM_RS"] = (
+        (last_ex["RS_4W_Z"] >= 0.5) &
+        (last_ex["RS_13W_Z"] >= 0.0) &
+        (last_ex["Near52w"]) &
+        (last_ex["SqueezeScore"] >= 0.65) | (last_ex["PocketPivot10"]==1)
     )
-    # if we have High52W merge, otherwise set False
-    if "High52W" not in base.columns:
-        hi = read_csv_robust(os.path.join(DATA_DIR,"highlow_52w.csv"))
-        if hi is not None and not hi.empty and "High52W" in hi.columns:
-            base = base.merge(hi[["Symbol","High52W"]], on="Symbol", how="left")
-    base["hi52w_near"] = base["High52W"].notna() & ((base["High52W"]-base["Close"])/base["High52W"] <= 0.02)
 
-    score = np.zeros(len(base), dtype=float)
-    def add(mask, w): 
-        nonlocal score
-        score = score + (mask.astype(float)*w)
-    add(base["trend_align"], W["trend_align"])
-    add(base["pullback_hi55"], W["pullback_hi55"])
-    add(base["nr7_flag"], W["nr7"])
-    add(base["atr_low"], W["atr_low"])
-    add(base["delivery_q4"], W["delivery_q4"])
-    add(base["insider_recent"], W["insider_buy"])
-    add(base["bulk_recent_buy"], W["bulk_buy"])
-    add(base["block_recent_buy"], W["block_buy"])
-    add(base["hi52w_near"], W["hi52w_near"])
-    add(base["hi52w_fresh_calm"], W["hi52w_fresh_calm"])
-    add(base["liq_ok"], W["liquidity"])
-    add(base["below_sma20"], W["below_sma20"])
-    add(base["extended_bb"], W["extended_bb"])
-    base["R_SCORE"] = np.clip(score, 0, 100)
-
-    # WHY + Trigger
-    tags = []
-    for _, r in base.iterrows():
-        t=[]
-        if r["trend_align"]: t.append("TREND")
-        if r["pullback_hi55"]: t.append("PULLBACK55")
-        if r["nr7_flag"]: t.append("NR7")
-        if r["atr_low"]: t.append("ATR_LOW")
-        if r["delivery_q4"]: t.append("DELIV_Q4")
-        if r["insider_recent"]: t.append("INSIDER+")
-        if r["bulk_recent_buy"]: t.append("BULK+")
-        if r["block_recent_buy"]: t.append("BLOCK+")
-        if r["hi52w_near"]: t.append("NEAR_52W")
-        if r["hi52w_fresh_calm"]: t.append("CALM_52W")
-        if r["extended_bb"]: t.append("EXTENDED")
-        if r["below_sma20"]: t.append("SUB_SMA20")
-        tags.append(",".join(t))
-    base["WHY"] = tags
-
-    # Two-bar trigger
-    hq = hist.sort_values(["Symbol","Date"])
-    prev = hq.groupby("Symbol").tail(3).groupby("Symbol")
-    max2 = prev["High"].apply(lambda s: s.iloc[:-1].max() if len(s)>=2 else np.nan)
-    min2 = prev["Low"].apply(lambda s: s.iloc[:-1].min() if len(s)>=2 else np.nan)
-    trig = pd.DataFrame({"Symbol": max2.index, "TrigHigh2": max2.values, "TrigLow2": min2.values})
-    base = base.merge(trig, on="Symbol", how="left")
-    base["Entry"] = np.where(base["TrigHigh2"].notna(), base["TrigHigh2"], base["High"])
-    base["Stop"]  = np.where(base["TrigLow2"].notna(),  base["TrigLow2"],  base["Low"])
-    base["Risk"]  = (base["Entry"] - base["Stop"]).clip(lower=0.5*base["ATR14"], upper=1.2*base["ATR14"]).round(2)
-    base["Trigger"] = (
-        "Go long if Close>Entry; Stop below " + base["Stop"].round(2).astype(str) +
-        "; Risk≈" + base["Risk"].astype(str)
+    # 2) Trend pullback to strength
+    # Pullback proxy: Close <= SMA10 but >= SMA20, and MA aligned
+    last_ex["FAM_PULL"] = (
+        (last_ex["MA_Aligned"]) &
+        (last_ex["Close"] <= last_ex["SMA10"]) &
+        (last_ex["Close"] >= last_ex["SMA20"])
     )
 
-    # Output
-    cols = ["Date","Symbol","Close","ATR14","SMA20","SMA50","BB_Upper","BB_Lower",
-            "Volume","VolAvg20","Delivery_Pct","DaysSinceHI55","HI55_Px","High52W",
-            "R_SCORE","WHY","Trigger"]
-    for c in cols:
-        if c not in base.columns: base[c]=np.nan
-    out = base[cols].sort_values(["R_SCORE","Symbol"], ascending=[False, True])
-    out_path = os.path.join(OUT_DIR, "WEEK_PACK.csv")
-    out.to_csv(out_path, index=False)
+    # 3) Base breakout (squeeze-release)
+    # Breakout proxy: Close >= (rolling 40d high)*1.01 and squeeze tight
+    roll_hi_40 = g["High"].transform(lambda s: s.rolling(40, min_periods=40).max())
+    brk = df[df["Date"]==last_day][["Symbol","Close"]].copy()
+    brk["Hi40"] = roll_hi_40[df["Date"]==last_day].values
+    brk["Breakout"] = (brk["Close"] >= 1.01 * brk["Hi40"])
+    last_ex = last_ex.merge(brk[["Symbol","Breakout"]], on="Symbol", how="left")
+    last_ex["FAM_BB"] = (last_ex["Breakout"] & (last_ex["SqueezeScore"] >= 0.7))
 
-    status.update({
-        "ok": True,
-        "when": datetime.utcnow().isoformat()+"Z",
-        "latest_day": str(pd.to_datetime(base["Date"].max()).date()),
-        "rows": int(len(out)),
-        "top5": out.head(5)["Symbol"].tolist(),
-        "out": out_path,
-        "diag": diag
-    })
-    with open(STATUS_F, "w", encoding="utf-8") as f: json.dump(status, f, indent=2)
-    print(json.dumps(status, indent=2))
-    return 0
+    # Liquidity gate (deliverable value optional; if not present, allow via turnover alone)
+    lq_turn = (last_ex["TurnoverCr_med20"] >= args.turnover_cr_20)
+    if "DelivValCr_med20" in last_ex.columns:
+        lq_deliv = (last_ex["DelivValCr_med20"] >= args.deliv_cr_20)
+    else:
+        lq_deliv = pd.Series([False]*len(last_ex), index=last_ex.index)
+
+    last_ex["LQ_TURN_OK"]  = lq_turn.fillna(False)
+    last_ex["LQ_DELIV_OK"] = lq_deliv.fillna(False)
+    # Gate rule: turnover must pass; deliverable passes OR is missing (NaN) → treat missing as pass
+    last_ex["LQ_OK"] = last_ex["LQ_TURN_OK"] & ( last_ex["LQ_DELIV_OK"] | last_ex["LQ_DELIV_OK"].isna() )
+
+    # ATR% gate
+    last_ex["ATR_OK"] = (last_ex["ATR_PCT"] >= args.atr_min) & (last_ex["ATR_PCT"] <= args.atr_max)
+
+    # Final eligibility: universe + liquidity + ATR + any family
+    snap_flags = snap[["Symbol","UNIVERSE_OK"]].copy()
+    last_ex = last_ex.merge(snap_flags, on="Symbol", how="left")
+
+    last_ex["ANY_FAM"] = (last_ex["FAM_RS"] | last_ex["FAM_PULL"] | last_ex["FAM_BB"])
+    eligible = last_ex[last_ex["UNIVERSE_OK"] & last_ex["LQ_OK"] & last_ex["ATR_OK"] & last_ex["ANY_FAM"]].copy()
+
+    if eligible.empty:
+        # Write an empty file with headers for stability
+        empty_cols = ["Symbol","Series","Close","R_SCORE","WHY","Entry","SL",
+                      "RS_4W_Z","RS_13W_Z","SqueezeScore","PocketPivot10",
+                      "TurnoverCr_med20","DelivValCr_med20","ATR_PCT","MA_Aligned","Near52w",
+                      "SETUP_FAMILY"]
+        pd.DataFrame(columns=empty_cols).to_csv(out_path, index=False)
+        print("No eligible names today; wrote empty WEEK_PACK.csv")
+        return
+
+    # Scores
+    def liquidity_score(row):
+        tt = min(1.0, (row["TurnoverCr_med20"] or 0)/20.0)
+        dd = min(1.0, ( (row["DelivValCr_med20"] or 0)/8.0 ) ) if not pd.isna(row.get("DelivValCr_med20", np.nan)) else 0.5
+        return max(0.0, min(1.0, 0.5*tt + 0.5*dd))
+
+    eligible["PowerSignal"] = np.where((eligible["PocketPivot10"]==1) | (eligible["Breakout"]), 1.0,
+                                  np.where(eligible["UpVolDom10"], 0.5, 0.0))
+
+    rs4 = eligible["RS_4W_Z"].clip(lower=0, upper=2).fillna(0)
+    rs13 = eligible["RS_13W_Z"].clip(lower=-1, upper=2).fillna(0)
+    poww = eligible["PowerSignal"].fillna(0)
+    sqz  = eligible["SqueezeScore"].clip(0,1).fillna(0)
+    lqs  = eligible.apply(liquidity_score, axis=1)
+    stru = (eligible["MA_Aligned"].astype(float) + eligible["Near52w"].astype(float))/2.0
+
+    eligible["R_SCORE"] = (
+        30.0*rs4 + 15.0*rs13 + 20.0*poww + 15.0*sqz + 10.0*lqs + 10.0*stru
+    ).round(1)
+
+    # Family tag
+    def fam_tag(r):
+        if r["FAM_BB"]: return "BASE_BREAKOUT"
+        if r["FAM_RS"]: return "RS_CONT"
+        if r["FAM_PULL"]: return "PULLBACK"
+        return "OTHER"
+
+    # Entry/SL heuristics
+    def entry_sl(r):
+        atr = r["ATR14"] if not pd.isna(r["ATR14"]) else 0
+        if r["FAM_BB"]:
+            entry = round(float(r["High"]*1.01), 2)
+            sl    = round(float(r["Close"] - 1.2*atr), 2)
+        elif r["FAM_RS"]:
+            entry = round(float(max(r["Close"], r["High"]*1.005)), 2)
+            sl    = round(float(r["Close"] - 1.1*atr), 2)
+        else: # pullback
+            entry = round(float(max(r["Close"], r["SMA10"] + 0.5*atr)), 2)
+            sl    = round(float(min(r["SMA20"] - 0.5*atr, r["Low"] - 0.2*atr)), 2)
+        return entry, sl
+
+    # Bring Series back for output
+    latest_series = df[df["Date"]==last_day][["Symbol","Series"]].copy()
+    eligible = eligible.merge(latest_series, on="Symbol", how="left")
+
+    # Build WHY tags
+    def why(r):
+        tags = []
+        if r["FAM_BB"]: tags.append("VCP_BREAKOUT")
+        if r["FAM_RS"]: tags.append("RS_LEADER")
+        if r["FAM_PULL"]: tags.append("TREND_PULLBACK")
+        if r["PocketPivot10"]==1: tags.append("POCKET_PIVOT")
+        if r["UpVolDom10"]: tags.append("UPVOL_DOM")
+        if r["MA_Aligned"]: tags.append("MA_ALIGNED")
+        if r["Near52w"]: tags.append("NEAR_52W")
+        if r["SqueezeScore"]>=0.7: tags.append("COILED")
+        return ",".join(tags)
+
+    # Compose output rows
+    out_cols = ["Symbol","Series","Close","High","Low","SMA10","SMA20","SMA50","SMA200",
+                "RS_4W_Z","RS_13W_Z","SqueezeScore","PocketPivot10",
+                "TurnoverCr_med20","DelivValCr_med20","ATR14","ATR_PCT",
+                "MA_Aligned","Near52w","FAM_RS","FAM_PULL","FAM_BB","Breakout","UpVolDom10"]
+
+    out_df = eligible[out_cols].copy()
+    ents, sls, fams, whys = [], [], [], []
+    for _, r in out_df.iterrows():
+        e, s = entry_sl(r)
+        ents.append(e); sls.append(s)
+        fams.append(fam_tag(r))
+        whys.append(why(r))
+
+    out_df["Entry"] = ents
+    out_df["SL"]    = sls
+    out_df["SETUP_FAMILY"] = fams
+    out_df["WHY"] = whys
+    out_df["R_SCORE"] = eligible["R_SCORE"].values
+    out_df["AsOf"] = pd.to_datetime(last_day).date()
+
+    out_df = out_df.sort_values("R_SCORE", ascending=False).head(args.top)
+
+    # keep concise columns in output
+    final = out_df[[
+        "Symbol","Series","Close","R_SCORE","Entry","SL","WHY",
+        "RS_4W_Z","RS_13W_Z","SqueezeScore","PocketPivot10",
+        "TurnoverCr_med20","DelivValCr_med20","ATR_PCT",
+        "MA_Aligned","Near52w","SETUP_FAMILY","AsOf"
+    ]].reset_index(drop=True)
+
+    final.to_csv(out_path, index=False)
+    print(f"Wrote {out_path} with {len(final)} rows for {last_day.date()}")
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
