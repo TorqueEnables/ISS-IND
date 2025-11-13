@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "when": "2025-11-12T13:37:35.924417Z",
+  "when": "2025-11-13T13:57:18.960822Z",
   "inputs": {
     "bhav_files_seen": [
       "bhav_27102025.csv",
@@ -52,6 +52,7 @@
       "sec_bhavdata_full_13072025.csv",
       "sec_bhavdata_full_13082025.csv",
       "sec_bhavdata_full_13102025.csv",
+      "sec_bhavdata_full_13112025.csv",
       "sec_bhavdata_full_14072025.csv",
       "sec_bhavdata_full_14082025.csv",
       "sec_bhavdata_full_14092025.csv",
@@ -111,20 +112,20 @@
       "sec_bhavdata_full_31082025.csv",
       "sec_bhavdata_full_31102025.csv"
     ],
-    "latest_raw_file": "sec_bhavdata_full_12112025.csv",
-    "latest_raw_date": "2025-11-12",
+    "latest_raw_file": "sec_bhavdata_full_13112025.csv",
+    "latest_raw_date": "2025-11-13",
     "bulk_src": "Bulk-Deals-11-11-2024-to-11-11-2025.csv",
-    "block_src": "Block-Deals-03-11-2024-to-03-11-2025.csv"
+    "block_src": "Block-Deals-11-11-2024-to-11-11-2025.csv"
   },
   "outputs": {
-    "bhav_hist_rows": 266986,
-    "bhav_hist_last_date": "2025-11-12",
-    "deliverables_rows": 3048,
+    "bhav_hist_rows": 270024,
+    "bhav_hist_last_date": "2025-11-13",
+    "deliverables_rows": 3041,
     "bulk_rows": 18405,
-    "block_rows": 1947,
-    "hi52w_rows": 3278,
-    "tech_latest_rows": 3048,
-    "tech_latest_last_date": "2025-11-12"
+    "block_rows": 1940,
+    "hi52w_rows": 3283,
+    "tech_latest_rows": 3041,
+    "tech_latest_last_date": "2025-11-13"
   },
   "diagnostics": [
     {
@@ -1253,6 +1254,29 @@
       "norm_null_date": 0,
       "norm_null_symbol": 0,
       "new_rows": 3038
+    },
+    {
+      "file": "sec_bhavdata_full_13112025.csv",
+      "raw_rows": 3041,
+      "raw_cols": [
+        "SYMBOL",
+        "SERIES",
+        "DATE1",
+        "PREV_CLOSE",
+        "OPEN_PRICE",
+        "HIGH_PRICE",
+        "LOW_PRICE",
+        "LAST_PRICE",
+        "CLOSE_PRICE",
+        "AVG_PRICE",
+        "TTL_TRD_QNTY",
+        "TURNOVER_LACS"
+      ],
+      "detected_date": "2025-11-13",
+      "norm_rows": 3041,
+      "norm_null_date": 0,
+      "norm_null_symbol": 0,
+      "new_rows": 3041
     },
     {
       "file": "sec_bhavdata_full_14072025.csv",
