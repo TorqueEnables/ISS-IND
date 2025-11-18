@@ -2,7 +2,8 @@
 """
 StakeLens Insider — Weekly scorer with Sector Advantage + Macro Regimes.
 Now includes Plan-B (Reclaim) and Plan-C (Inside-day) entry options and
-a volatility/tick-aware breakout buffer.
+a volatility/tick-aware breakout buffer, plus flow-aware scoring using
+insider trades, bulk/block deals, and delivery strength.
 
 Optional inputs (auto-skip if missing):
 - ref/symbol_sector.csv   -> columns: Symbol,Sector
@@ -10,7 +11,8 @@ Optional inputs (auto-skip if missing):
 - data/index/INDIAVIX.csv -> Date,Close (daily)
 """
 
-import argparse, re
+import argparse, re, os
+from datetime import timedelta
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -75,6 +77,26 @@ def pick(cands, cols):
         if c in cols: return c
     return None
 
+def _pick_flex(cols, names):
+    """
+    Case-insensitive fuzzy column chooser for external CSVs (PIT / Bulk / Block),
+    tolerant to NSE schema drift.
+    """
+    cols_list = list(cols)
+    lower = {c.lower(): c for c in cols_list}
+    names_lower = [n.lower() for n in names]
+    # Exact case-insensitive match first
+    for n in names_lower:
+        if n in lower:
+            return lower[n]
+    # Fallback: substring search
+    for c in cols_list:
+        cl = c.lower()
+        for n in names_lower:
+            if n in cl:
+                return c
+    return None
+
 def to_num(s):
     if s.dtype == "O":
         s = s.astype(str).str.replace(",", "", regex=False).str.replace(" ", "", regex=False)
@@ -119,6 +141,126 @@ def hybrid_breakout_buffer(close: float, high: float, atr: float) -> float:
         base = max(base, 5*t)
     # ≥500: ATR term dominates naturally
     return base
+
+# ---------------- Flow & penalty helpers ----------------
+def attach_insider_flags(last: pd.DataFrame) -> pd.DataFrame:
+    """
+    INSIDER_PLUS:
+        1 if net insider direction over the last ~30 days is positive, else 0.
+    """
+    last["INSIDER_PLUS"] = 0
+    pit_path = Path("data/CF-Insider-Trading-equities-latest.csv")
+    if not pit_path.exists():
+        return last
+
+    pit = pd.read_csv(pit_path)
+    if pit.empty:
+        return last
+
+    sym_col  = _pick_flex(pit.columns, ["symbol", "security_symbol", "ticker"])
+    date_col = _pick_flex(pit.columns, ["date", "txn_dt", "transaction_date", "intimation_date"])
+    dir_col  = _pick_flex(pit.columns, ["transaction_type", "mode", "buy_sell", "type"])
+
+    if not sym_col or not date_col or not dir_col:
+        return last  # fail soft; schema unexpected
+
+    pit[date_col] = pd.to_datetime(pit[date_col], errors="coerce")
+    if pit[date_col].max() is pd.NaT:
+        return last
+
+    cutoff = pit[date_col].max() - timedelta(days=30)
+    recent = pit[pit[date_col] >= cutoff].copy()
+    if recent.empty:
+        return last
+
+    d = recent[dir_col].astype(str).str.lower()
+    recent["dir_sign"] = 0
+    recent.loc[d.str.contains("buy") | d.str.contains("acq"), "dir_sign"] = 1
+    recent.loc[d.str.contains("sell") | d.str.contains("disp"), "dir_sign"] = -1
+
+    net = (
+        recent
+        .groupby(sym_col)["dir_sign"]
+        .sum()
+        .rename("InsiderNet30")
+    )
+
+    last = last.merge(net, left_on="Symbol", right_index=True, how="left")
+    last["INSIDER_PLUS"] = (last["InsiderNet30"] > 0).astype(int).fillna(0)
+    return last
+
+def _recent_presence_flag(path: Path, last: pd.DataFrame, flag_name: str, days: int = 40) -> pd.DataFrame:
+    last[flag_name] = 0
+    if not path.exists():
+        return last
+
+    deals = pd.read_csv(path)
+    if deals.empty:
+        return last
+
+    sym_col  = _pick_flex(deals.columns, ["symbol", "scrip", "security"])
+    date_col = _pick_flex(deals.columns, ["date", "deal_date", "traded_date"])
+
+    if not sym_col or not date_col:
+        return last
+
+    deals[date_col] = pd.to_datetime(deals[date_col], errors="coerce")
+    if deals[date_col].max() is pd.NaT:
+        return last
+
+    cutoff = deals[date_col].max() - timedelta(days=days)
+    recent = deals[deals[date_col] >= cutoff]
+    if recent.empty:
+        return last
+
+    has_deal = (
+        recent.dropna(subset=[sym_col])
+              .groupby(sym_col)[date_col]
+              .size()
+              .rename(flag_name)
+              .clip(lower=1)
+    )
+
+    last = last.merge(has_deal, left_on="Symbol", right_index=True, how="left")
+    last[flag_name] = (last[flag_name] > 0).astype(int).fillna(0)
+    return last
+
+def attach_bulk_block_flags(last: pd.DataFrame) -> pd.DataFrame:
+    last = _recent_presence_flag(Path("data/bulk_deals_latest.csv"),  last, "BULK_PLUS")
+    last = _recent_presence_flag(Path("data/block_deals_latest.csv"), last, "BLOCK_PLUS")
+    return last
+
+def attach_flow_and_penalty_features(last: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add:
+        DELIV_Q4     – delivery value in top quartile cross-sectionally (last day)
+        INSIDER_PLUS – recent insider net buy
+        BULK_PLUS / BLOCK_PLUS – recent presence in bulk/block deals
+        BELOW_SMA20  – Close below 20-DMA (trend penalty)
+        EXTENDED_BB  – stretched: very strong close + high ATR% (extension penalty)
+    """
+    # Delivery strength (value, not %; robust to NSE schema quirks)
+    if "DelivValCr" in last.columns:
+        if last["DelivValCr"].notna().any():
+            q75 = last["DelivValCr"].dropna().quantile(0.75)
+        else:
+            q75 = np.nan
+        if np.isfinite(q75):
+            last["DELIV_Q4"] = ((last["DelivValCr"] >= q75) & last["DelivValCr"].notna()).astype(int)
+        else:
+            last["DELIV_Q4"] = 0
+    else:
+        last["DELIV_Q4"] = 0
+
+    # Insider / Bulk / Block
+    last = attach_insider_flags(last)
+    last = attach_bulk_block_flags(last)
+
+    # Penalties: trend + extension (approximate BB extension)
+    last["BELOW_SMA20"] = (last["Close"] < last["SMA20"]).astype(int)
+    # Extended = very strong close in range AND high ATR%
+    last["EXTENDED_BB"] = ((last["CloseLoc"] >= 0.9) & (last["ATR_PCT"] >= 0.08)).astype(int)
+    return last
 
 # ---------------- Main ----------------
 def main():
@@ -177,7 +319,7 @@ def main():
     df = df[df["Symbol"].isin(keep_syms)].copy()
     g  = df.groupby("Symbol", group_keys=False)
 
-    # <<< PrevHigh/PrevLow RIGHT AFTER groupby (fix) >>>
+    # PrevHigh/PrevLow for inside-day logic
     df["PrevHigh"] = g["High"].shift(1)
     df["PrevLow"]  = g["Low"].shift(1)
 
@@ -247,12 +389,18 @@ def main():
     df["DownVol3"]  = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
 
     # Snapshot (last day) ---------------------------------------------
-    last = df[df["Date"]==last_day][[
+    base_cols = [
         "Symbol","Series","Open","High","Low","Close","PrevClose",
         "SMA10","SMA20","SMA50","SMA200","ATR14","ATR_PCT",
         "BBWidth20","UpVol10","DownVol10","UpVol3","DownVol3",
         "TurnoverCr_med20","DelivValCr_med20","CloseLoc"
-    ]].copy()
+    ]
+    opt_cols = []
+    if "DelivValCr" in df.columns:
+        opt_cols.append("DelivValCr")
+    last = df[df["Date"]==last_day][base_cols + opt_cols].copy()
+    if "DelivValCr" not in last.columns:
+        last["DelivValCr"] = np.nan
     last = last.merge(pct_df, on="Symbol", how="left")
     last = last.merge(last_rs[["Symbol","RS_4W_Z","RS_13W_Z"]], on="Symbol", how="left")
 
@@ -297,8 +445,11 @@ def main():
     last["FAM_BB"]   = (last["Breakout"] & (last["SqueezeScore"] >= 0.7))
     last["ANY_FAM"]  = last["FAM_RS"] | last["FAM_PULL"] | last["FAM_BB"]
 
-    # Baseline gates
+    # ---- Flow & penalties on last snapshot ----
     last = last.merge(snap[["Symbol","UNIVERSE_OK"]], on="Symbol", how="left")
+    last = attach_flow_and_penalty_features(last)
+
+    # Baseline gates
     last["LQ_TURN_OK"]  = (last["TurnoverCr_med20"] >= args.turnover_cr_20)
     last["LQ_DELIV_OK"] = (last["DelivValCr_med20"] >= args.deliv_cr_20) | last["DelivValCr_med20"].isna()
     last["LQ_OK"]       = last["LQ_TURN_OK"] & last["LQ_DELIV_OK"]
@@ -378,6 +529,7 @@ def main():
         tt = min(1.0, (row["TurnoverCr_med20"] or 0)/20.0)
         dd = 0.5 if pd.isna(row.get("DelivValCr_med20", np.nan)) else min(1.0, (row["DelivValCr_med20"] or 0)/8.0)
         return max(0.0, min(1.0, 0.5*tt + 0.5*dd))
+
     elig = fam_ok.copy()
     elig["PowerSignal"] = np.where((elig["PocketPivot10"]==1) | (elig["Breakout"]), 1.0,
                               np.where(elig["UpVolDom10"], 0.5, 0.0))
@@ -387,7 +539,25 @@ def main():
     sqz = elig["SqueezeScore"].clip(0,1).fillna(0)
     lqs = elig.apply(liquidity_score, axis=1)
     stru= (elig["MA_Aligned"].astype(float) + elig["Near52w"].astype(float))/2.0
-    elig["R_SCORE"] = (30*rs4 + 15*rs13 + 20*poww + 15*sqz + 10*lqs + 10*stru).round(1)
+
+    # Ensure flow/penalty fields exist
+    for col in ["DELIV_Q4","INSIDER_PLUS","BULK_PLUS","BLOCK_PLUS","BELOW_SMA20","EXTENDED_BB"]:
+        if col not in elig.columns:
+            elig[col] = 0
+
+    flow = (
+        10*elig["DELIV_Q4"].fillna(0) +
+        10*elig["INSIDER_PLUS"].fillna(0) +
+         8*elig["BULK_PLUS"].fillna(0) +
+         5*elig["BLOCK_PLUS"].fillna(0)
+    )
+    penalty = (
+        20*elig["BELOW_SMA20"].fillna(0) +
+        15*elig["EXTENDED_BB"].fillna(0)
+    )
+
+    elig["R_SCORE"] = (30*rs4 + 15*rs13 + 20*poww + 15*sqz + 10*lqs + 10*stru + flow - penalty).round(1)
+    elig["R_SCORE"] = elig["R_SCORE"].clip(lower=0, upper=100)
 
     # ---- Plans & proximity ----
     def build_plans(r):
@@ -482,6 +652,10 @@ def main():
         if not loc_ok:   reasons.append("Weak close")
         if not prox_ok:  reasons.append(f"Far ({prox:.2f} ATR)")
         if not coil_ok:  reasons.append("Not coiled")
+        if "DELIV_Q4" in r and r.get("DELIV_Q4", 0) == 0:
+            reasons.append("No delivery edge")
+        if "INSIDER_PLUS" in r and r.get("INSIDER_PLUS", 0) == 0:
+            reasons.append("No fresh insider")
         if not market_ok and not sector_ok and not stock_only_ok:
             reasons.append(f"Breadth {breadth20*100:.0f}%/Disp {disp4w*100:.1f}%")
         if "SECTOR_BREADTH20" in r and not sector_ok:
@@ -502,11 +676,23 @@ def main():
                 ("MA_ALIGNED", bool(r["MA_Aligned"])),
                 ("NEAR_52W", bool(r["Near52w"])),
                 ("COILED", bool(r["SqueezeScore"]>=0.7)),
+                ("DELIV_Q4", bool(r.get("DELIV_Q4",0))),
+                ("INSIDER+", bool(r.get("INSIDER_PLUS",0))),
+                ("BULK+", bool(r.get("BULK_PLUS",0))),
+                ("BLOCK+", bool(r.get("BLOCK_PLUS",0))),
+                ("SUB_SMA20", bool(r.get("BELOW_SMA20",0))),
+                ("EXTENDED", bool(r.get("EXTENDED_BB",0))),
             ] if flag]),
             "RS_4W_Z": r["RS_4W_Z"], "RS_13W_Z": r["RS_13W_Z"], "SqueezeScore": r["SqueezeScore"],
             "PocketPivot10": r["PocketPivot10"],
             "TurnoverCr_med20": r["TurnoverCr_med20"], "DelivValCr_med20": r.get("DelivValCr_med20", np.nan),
             "ATR_PCT": r["ATR_PCT"], "MA_Aligned": r["MA_Aligned"], "Near52w": r["Near52w"],
+            "DELIV_Q4": r.get("DELIV_Q4",0),
+            "INSIDER_PLUS": r.get("INSIDER_PLUS",0),
+            "BULK_PLUS": r.get("BULK_PLUS",0),
+            "BLOCK_PLUS": r.get("BLOCK_PLUS",0),
+            "BELOW_SMA20": r.get("BELOW_SMA20",0),
+            "EXTENDED_BB": r.get("EXTENDED_BB",0),
             "GO": bool(go_flag),
             "GO_REASONS": go_reason if go_flag else ("; ".join(reasons) if reasons else "Needs confirm"),
             "MKT_BREADTH20": round(breadth20,3),
