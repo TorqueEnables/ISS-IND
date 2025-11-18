@@ -77,23 +77,16 @@ jobs:
             --pack out/WEEK_PACK.csv \
             --out out/WEEK_BRIEF.md
 
-      - name: Write run stamp (forces commit even if brief unchanged)
+      # ---- FIXED: no heredoc, pure bash ----
+      - name: Write run stamp (force commit even if brief unchanged)
         run: |
           mkdir -p out
-          python - <<'PY' > out/WEEK_RUNSTAMP.txt
-          from datetime import datetime
-          import pandas as pd, pathlib as P
-          hist = P.Path('data/prices/bhav_hist.csv')
-          last = 'NA'
-        try:
-          df = pd.read_csv(hist, parse_dates=['Date'])
-        if not df.empty:
-          last = str(df['Date'].max())[:10]
-        except Exception:
-          pass
-          print(f"run_ist={datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}")
-          print(f"last_trading_day={last}")
-          PY
+          # best-effort last trading day from the first CSV column (assumed Date)
+          last=$(awk -F',' 'NR>1 {print $1}' data/prices/bhav_hist.csv 2>/dev/null | sort | tail -n1)
+          [ -z "$last" ] && last="NA"
+          printf "run_ist=%s\n" "$(date +'%Y-%m-%d %H:%M:%S IST')" > out/WEEK_RUNSTAMP.txt
+          printf "last_trading_day=%s\n" "$last" >> out/WEEK_RUNSTAMP.txt
+          cat out/WEEK_RUNSTAMP.txt
 
       - name: Stage results
         run: |
