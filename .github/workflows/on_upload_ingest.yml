@@ -102,13 +102,13 @@ jobs:
           git add data/*status.json 2>/dev/null || true
           git add out 2>/dev/null || true
 
-          # NEW: sector map (if ensure_sector_map.py wrote it)
-          mkdir -p ref
-          git add ref/symbol_sector.csv 2>/dev/null || true
-          git add ref/symbol_sector_overrides.csv 2:/dev/null || true
-          # or simply: git add ref 2>/dev/null || true
+          # Sector map: add folder if present (avoids pathspec errors)
+          if [ -d ref ]; then
+            git add ref 2>/dev/null || true
+          fi
 
           git status --porcelain
+
 
       - name: Commit (skip if no changes)
         run: |
