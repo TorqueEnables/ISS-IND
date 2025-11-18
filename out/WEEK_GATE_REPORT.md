@@ -5,4 +5,7 @@
 - Liquidity OK (Turnover_20 ≥ 5.0 cr; Deliverable_20 ≥ 2.0 cr or NA): 871
 - ATR% OK (2%–8%): 773
 - Family match (RS/Pullback/Breakout): 88
-- Market breadth (%% above 20-DMA): 40.3%
+- Market breadth (%% >20DMA): 40.3%
+- Dispersion (stdev 4W returns): 11.5%
+- Macro tighten active: NO
+- Sector map: present
