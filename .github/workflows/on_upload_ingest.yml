@@ -57,6 +57,10 @@ jobs:
             --out data \
             --asof auto
 
+      - name: Ensure sector map covers latest symbols (on-demand)
+        run: |
+          python scripts/ensure_sector_map.py
+
       - name: Write bhav_latest.csv (V1 bridge)
         run: |
           python scripts/write_bhav_latest.py --schema normalized
