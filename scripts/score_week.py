@@ -476,3 +476,198 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+--- a/scripts/score_week.py
++++ b/scripts/score_week.py
+@@
+-import argparse, re
++import argparse, re
+ from pathlib import Path
+ import numpy as np
+ import pandas as pd
+ 
+@@
+ PROX_ATR_MAX         = 0.80  # entry distance ≤ 0.8 × ATR14
+ CLOSE_LOC_MIN        = 0.60  # close in top 40% of daily range
+ UPVOL3_RATIO_MIN     = 1.20  # 3d up-vol / down-vol
+ SQUEEZE_MIN_RS       = 0.60  # RS continuation requires some coil
++# New: dynamic proximity caps & hybrid buffers
++PROX_ATR_BASE        = 0.30  # baseline cap when tape is neutral/soft
++PROX_ATR_RISK_ON     = 0.45  # allow farther when breadth/dispersion are strong
++PROX_ATR_HIGHVOL     = 0.25  # tighten further in high-vol regime
++HYBRID_BUF_ATR       = 0.15  # 15% of ATR as part of breakout buffer
++HYBRID_BUF_PCT       = 0.0015 # 0.15% of price as minimal nudge
++RECLAIM_CLOSELOC_MIN = 0.60
++RECLAIM_UPVOL3_MIN   = 1.20
+ 
+@@
+ def true_range(df):
+     pc = df["Close"].shift(1)
+     tr = pd.concat([df["High"]-df["Low"], (df["High"]-pc).abs(), (df["Low"]-pc).abs()], axis=1).max(axis=1)
+     return tr
++
++def tick_for_price(p: float) -> float:
++    # NSE equity default tick is ₹0.05 for most scrips.
++    # Keep it simple and deterministic.
++    return 0.05
++
++def hybrid_breakout_buffer(close: float, high: float, atr: float) -> float:
++    """Volatility-smart + tick-aware buffer above High."""
++    t   = tick_for_price(close)
++    base = max(HYBRID_BUF_ATR*atr, HYBRID_BUF_PCT*close, 0.0)
++    if close < 100:
++        base = max(base, 10*t, 0.20*atr)
++    elif close < 500:
++        base = max(base, 5*t)
++    # ≥500: ATR term dominates naturally
++    return base
+ 
+@@
+     df.sort_values(["Symbol","Date"], inplace=True)
+ 
+     # Coerce numerics
+@@
+     g  = df.groupby("Symbol", group_keys=False)
++    # Previous H/L for patterns
++    df["PrevHigh"] = g["High"].shift(1)
++    df["PrevLow"]  = g["Low"].shift(1)
+ 
+     # Turnover to ₹ cr (auto-detect units; fallback to price*volume)
+@@
+     # Snapshot (last day)
+     last = df[df["Date"]==last_day][[
+         "Symbol","Series","Open","High","Low","Close","PrevClose",
+-        "SMA10","SMA20","SMA50","SMA200","ATR14","ATR_PCT",
++        "SMA10","SMA20","SMA50","SMA200","ATR14","ATR_PCT",
+         "BBWidth20","UpVol10","DownVol10","UpVol3","DownVol3",
+-        "TurnoverCr_med20","DelivValCr_med20","CloseLoc"
++        "TurnoverCr_med20","DelivValCr_med20","CloseLoc"
+     ]].copy()
++    # Inside-day pattern on the last bar
++    last = last.merge(
++        df[df["Date"]==last_day][["Symbol","PrevHigh","PrevLow"]],
++        on="Symbol", how="left"
++    )
++    last["InsideDay"]  = (last["High"] < last["PrevHigh"]) & (last["Low"] > last["PrevLow"])
++    last["InsideHigh"] = last["High"]
++    last["InsideLow"]  = last["Low"]
+@@
+     # ---- Candidate pool after core gates ----
+@@
+-    def entry_sl_mode(r):
+-        atr = r["ATR14"] if np.isfinite(r["ATR14"]) else 0.0
+-        if r["FAM_BB"]:
+-            entry = float(r["High"]*1.01); sl = float(r["Close"] - 1.2*atr); mode="BREAKOUT"
+-        elif r["FAM_RS"]:
+-            entry = float(max(r["Close"], r["High"]*1.005)); sl = float(r["Close"] - 1.1*atr)
+-            mode  = "BREAKOUT" if entry > r["High"] else "READY"
+-        else:
+-            entry = float(max(r["Close"], (r["SMA10"] or 0) + 0.5*atr))
+-            sl    = float(min((r["SMA20"] or r["Close"]) - 0.5*atr, r["Low"] - 0.2*atr))
+-            mode  = "RECLAIM"
+-        return round(entry,2), round(sl,2), mode
++    def build_plans(r, upvol3_min: float):
++        """
++        Returns (Entry1, SL1, Mode1, Entry2, SL2, Mode2, Entry3, SL3, Mode3)
++        - Plan A (primary): BREAKOUT/READY with hybrid buffer
++        - Plan B (reclaim): reclaim over SMA10 if power and close-location are decent
++        - Plan C (inside-day): break of inside high with stop at inside low
++        """
++        close = float(r["Close"]); high = float(r["High"]); low = float(r["Low"])
++        atr   = float(r["ATR14"]) if np.isfinite(r["ATR14"]) else 0.0
++        sma10 = float(r["SMA10"]) if np.isfinite(r["SMA10"]) else np.nan
++        sma20 = float(r["SMA20"]) if np.isfinite(r["SMA20"]) else np.nan
++
++        # ---- Plan A: hybrid breakout/ready
++        if r["FAM_BB"] or r["FAM_RS"]:
++            buf   = hybrid_breakout_buffer(close, high, atr)
++            entry = high + buf
++            sl    = close - (1.10 if r["FAM_RS"] else 1.20)*atr
++            mode  = "BREAKOUT"
++            if r["FAM_RS"] and entry <= high + 1e-9:
++                mode = "READY"
++        else:
++            # Pullback family → prefer reclaim over SMA10 with ATR pad
++            entry = max(close, (sma10 if np.isfinite(sma10) else close) + 0.10*atr)
++            sl    = min((sma20 if np.isfinite(sma20) else close) - 0.50*atr, low - 0.20*atr)
++            mode  = "RECLAIM"
++        A = (round(entry,2), round(sl,2), mode)
++
++        # ---- Plan B: Reclaim (published only if decent power & structure)
++        B = (np.nan, np.nan, "")
++        if (r["UpVol3Ratio"] or 0) >= RECLAIM_UPVOL3_MIN and (r["CloseLoc"] or 0) >= RECLAIM_CLOSELOC_MIN:
++            if np.isfinite(sma10) and np.isfinite(sma20):
++                e2 = (sma10 + 0.10*atr)
++                s2 = (sma20 - 0.50*atr)
++                B  = (round(e2,2), round(s2,2), "RECLAIM")
++
++        # ---- Plan C: Inside-day (today compressed within yesterday)
++        C = (np.nan, np.nan, "")
++        if bool(r.get("InsideDay", False)):
++            ih = float(r["InsideHigh"]); il = float(r["InsideLow"])
++            if np.isfinite(ih) and np.isfinite(il):
++                C = (round(ih,2), round(il,2), "INSIDE_DAY")
++
++        return A + B + C
+ 
+-    base_prox_max   = PROX_ATR_MAX
+-    base_upvol3_min = UPVOL3_RATIO_MIN
+-    if high_vol_tighten:
+-        base_prox_max   = PROX_ATR_TIGHT
+-        base_upvol3_min = UPVOL3_RATIO_TIGHT
++    # Dynamic proximity caps
++    risk_on = (breadth20 >= 0.55) or (disp4w >= 0.10)
++    base_prox_max   = PROX_ATR_RISK_ON if risk_on else PROX_ATR_BASE
++    base_upvol3_min = UPVOL3_RATIO_MIN
++    if high_vol_tighten:
++        base_prox_max   = min(base_prox_max, PROX_ATR_HIGHVOL)
++        base_upvol3_min = UPVOL3_RATIO_TIGHT
+ 
+     rows = []
+     for _, r in elig.iterrows():
+-        entry, sl, mode = entry_sl_mode(r)
++        (entry, sl, mode,
++         entry2, sl2, mode2,
++         entry3, sl3, mode3) = build_plans(r, base_upvol3_min)
+         atr = r["ATR14"] if np.isfinite(r["ATR14"]) and r["ATR14"]>0 else np.nan
+         prox = round(max(0.0, (entry - r["Close"]) / atr), 2) if np.isfinite(atr) else 9.99
+         power_ok = (r["PocketPivot10"]==1) or ((r["UpVol3Ratio"] or 0) >= base_upvol3_min)
+         loc_ok   = (r["CloseLoc"] or 0) >= CLOSE_LOC_MIN
+         prox_ok  = prox <= base_prox_max
+         coil_ok  = (r["SqueezeScore"] >= 0.60) if r["FAM_RS"] else True
+@@
+         rows.append({
+             "Symbol": r["Symbol"], "Series": r["Series"], "Close": r["Close"],
+-            "R_SCORE": r["R_SCORE"], "Entry": entry, "SL": sl,
++            "R_SCORE": r["R_SCORE"],
++            "Entry": entry, "SL": sl, "EntryMode": mode, "TriggerDistATR": prox,
++            "Entry2": entry2, "SL2": sl2, "Mode2": mode2,
++            "Entry3": entry3, "SL3": sl3, "Mode3": mode3,
+             "WHY": ",".join([t for t,flag in [
+                 ("VCP_BREAKOUT", bool(r["FAM_BB"])),
+                 ("RS_LEADER", bool(r["FAM_RS"])),
+                 ("TREND_PULLBACK", bool(r["FAM_PULL"])),
+                 ("POCKET_PIVOT", r["PocketPivot10"]==1),
+                 ("UPVOL_DOM", bool(r["UpVolDom10"])),
+                 ("MA_ALIGNED", bool(r["MA_Aligned"])),
+                 ("NEAR_52W", bool(r["Near52w"])),
+                 ("COILED", bool(r["SqueezeScore"]>=0.7)),
+             ] if flag]),
+             "RS_4W_Z": r["RS_4W_Z"], "RS_13W_Z": r["RS_13W_Z"], "SqueezeScore": r["SqueezeScore"],
+             "PocketPivot10": r["PocketPivot10"],
+             "TurnoverCr_med20": r["TurnoverCr_med20"], "DelivValCr_med20": r.get("DelivValCr_med20", np.nan),
+-            "ATR_PCT": r["ATR_PCT"], "MA_Aligned": r["MA_Aligned"], "Near52w": r["Near52w"],
+-            "EntryMode": mode, "TriggerDistATR": prox,
++            "ATR_PCT": r["ATR_PCT"], "MA_Aligned": r["MA_Aligned"], "Near52w": r["Near52w"],
+             "GO": bool(go_flag),
+             "GO_REASONS": go_reason if go_flag else ("; ".join(reasons) if reasons else "Needs confirm"),
+             "MKT_BREADTH20": round(breadth20,3),
+             "DISP_4W": round(disp4w,4),
+             "AsOf": pd.to_datetime(last_day).date(),
+             "Sector": r.get("Sector","OTHER"),
+             "SECTOR_BREADTH20": r.get("SECTOR_BREADTH20", 0.0),
+             "SEC_RS_Z": r.get("SEC_RS_Z", 0.0)
+         })
+@@
+     out_df = out_df.sort_values(["GO","R_SCORE"], ascending=[False, False]).head(args.top)
+     out_df.to_csv(out_path, index=False)
