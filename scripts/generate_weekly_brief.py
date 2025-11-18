@@ -1,89 +1,93 @@
 #!/usr/bin/env python3
 """
-Weekly brief generator — neutral tone, shows GO section first, then Watchlist.
+StakeLens Insider — Weekly Brief generator (with Plan-A/B/C rendering).
+
+Inputs:
+  --pack  out/WEEK_PACK.csv  (columns include: Symbol, R_SCORE, Entry/SL/EntryMode,
+                              Entry2/SL2/Mode2, Entry3/SL3/Mode3, WHY, GO, MKT_BREADTH20, DISP_4W, AsOf)
+  --out   out/WEEK_BRIEF.md
+
+Behaviour:
+  - Prints GO (ready) and Watchlist (needs confirm)
+  - Shows Plan A (primary) + optional Plan B (Reclaim) + optional Plan C (Inside-day)
 """
 
-import argparse, textwrap
+import argparse
 from pathlib import Path
 import pandas as pd
-from datetime import datetime
+import numpy as np
 
-p = argparse.ArgumentParser()
-p.add_argument("--pack", required=True)
-p.add_argument("--out", required=True)
-args = p.parse_args()
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--pack", required=True)
+    p.add_argument("--out", required=True)
+    return p.parse_args()
 
-pack_path = Path(args.pack)
-if not pack_path.exists():
-    raise SystemExit(f"Missing {pack_path}")
+def bfmt(x):
+    return "—" if (pd.isna(x) or x == "" or (isinstance(x, float) and not np.isfinite(x))) else f"{x:.2f}"
 
-pack = pd.read_csv(pack_path)
-out_path = Path(args.out)
-out_path.parent.mkdir(parents=True, exist_ok=True)
+def normalize_bool(s):
+    if s.dtype == bool:
+        return s
+    return s.astype(str).str.lower().isin(["true","1","yes"])
 
-if pack.empty:
-    out_path.write_text("# Weekly Brief\n\n_No eligible candidates today._\n", encoding="utf-8")
-    print("Pack empty; wrote placeholder brief.")
-    raise SystemExit(0)
+def main():
+    args = parse_args()
+    df = pd.read_csv(args.pack)
+    if df.empty:
+        Path(args.out).write_text("Weekly Brief\nNo eligible candidates today.\n", encoding="utf-8")
+        return
 
-as_of = None
-if "AsOf" in pack.columns:
-    try: as_of = pd.to_datetime(pack["AsOf"].iloc[0]).date()
-    except: pass
-as_of = as_of or datetime.now().date()
+    # Robust types
+    if "GO" in df.columns:
+        df["GO"] = normalize_bool(df["GO"])
+    else:
+        df["GO"] = False
 
-# Split GO and WATCH
-pack["GO"] = pack["GO"].astype(bool) if "GO" in pack.columns else False
-go_df = pack[pack["GO"]].sort_values("R_SCORE", ascending=False)
-wt_df = pack[~pack["GO"]].sort_values("R_SCORE", ascending=False).head(8)
+    asof = df["AsOf"].iloc[0] if "AsOf" in df.columns else ""
+    mb   = df["MKT_BREADTH20"].iloc[0] if "MKT_BREADTH20" in df.columns else np.nan
+    disp = df["DISP_4W"].iloc[0] if "DISP_4W" in df.columns else np.nan
 
-def fline(r):
-    parts = [
-        f"**{r['Symbol']}** — score {r['R_SCORE']}, last close {r['Close']}.",
-        f"Plan: Entry {r['Entry']}, Stop {r['SL']}.",
-    ]
-    if "EntryMode" in r: parts.append(f"Mode: {r['EntryMode']}.")
-    if "TriggerDistATR" in r: parts.append(f"Proximity: {r['TriggerDistATR']} ATR.")
-    if "WHY" in r and isinstance(r['WHY'], str) and r['WHY']: parts.append(f"Signals: {r['WHY']}.")
-    if "GO_REASONS" in r and isinstance(r['GO_REASONS'], str) and r['GO_REASONS'] != "OK":
-        parts.append(f"Note: {r['GO_REASONS']}.")
-    return " ".join(parts)
+    # Sorts
+    go  = df[df["GO"]].sort_values(["R_SCORE","Close"], ascending=[False, False])
+    wt  = df[~df["GO"]].sort_values(["R_SCORE","Close"], ascending=[False, False]).head(12)
 
-lines = []
-lines.append(f"# StakeLens Insider — Weekly Brief (auto-updated)")
-lines.append(f"**As of:** {as_of}")
-if "MKT_BREADTH20" in pack.columns and pack["MKT_BREADTH20"].notna().any():
-    try:
-        breadth = round(float(pack["MKT_BREADTH20"].dropna().iloc[0])*100, 1)
-        lines.append(f"**Market breadth (above 20-DMA):** {breadth}%")
-    except Exception:
-        pass
-lines.append("")
-
-lines.append("**How to use this brief:**")
-lines.append(textwrap.fill(
-    "Trade only GO names for higher conviction. GO requires proximity to trigger, strong closing behaviour, "
-    "and power confirmation, subject to a minimum market breadth. Watchlist items need further improvement; "
-    "prefer a controlled reclaim or a decisive breakout on strong volume before acting.",
-    width=96
-))
-lines.append("")
-
-if len(go_df):
-    lines.append("## GO (ready/high-conviction)")
-    for _, r in go_df.iterrows():
-        lines.append(f"- {fline(r)}")
+    lines = []
+    lines.append("StakeLens Insider — Weekly Brief (auto-updated)")
+    lines.append(f"As of: {asof} Market breadth (>20-DMA): {mb*100:.1f}%  Dispersion(4W σ): {disp*100:.1f}%")
     lines.append("")
-else:
-    lines.append("## GO (ready/high-conviction)")
-    lines.append("- No names passed the Go/No-Go guard today.")
+    lines.append("How to use this brief: Prefer GO names. If they don’t trigger, consider the Reclaim or Inside-day alternatives with their stated stops. Size positions so a stop-out costs a small, fixed share of capital.")
     lines.append("")
 
-if len(wt_df):
-    lines.append("## Watchlist (needs confirm)")
-    for _, r in wt_df.iterrows():
-        lines.append(f"- {fline(r)}")
-    lines.append("")
+    def render_block(title, frame):
+        lines.append(title)
+        if frame.empty:
+            lines.append("No names passed this section today.")
+            lines.append("")
+            return
+        for _, r in frame.iterrows():
+            sigs = (r.get("WHY","") or "").replace(",", ",")
+            entry = bfmt(r.get("Entry", np.nan)); sl = bfmt(r.get("SL", np.nan))
+            mode  = r.get("EntryMode","")
+            e2 = bfmt(r.get("Entry2", np.nan)); s2 = bfmt(r.get("SL2", np.nan)); m2 = r.get("Mode2","")
+            e3 = bfmt(r.get("Entry3", np.nan)); s3 = bfmt(r.get("SL3", np.nan)); m3 = r.get("Mode3","")
 
-out_path.write_text("\n".join(lines), encoding="utf-8")
-print(f"Wrote {out_path} (GO={len(go_df)}; Watch={len(wt_df)}).")
+            lines.append(f"{r['Symbol']} — score {r['R_SCORE']:.1f}, last close {r['Close']:.2f}. "
+                         f"Plan: Entry {entry}, Stop {sl}. Mode: {mode}. Signals: {sigs}.")
+            alt_bits = []
+            if m2:
+                alt_bits.append(f"Alt: Entry {e2}, Stop {s2}. Mode: {m2}.")
+            if m3:
+                alt_bits.append(f"Inside: Entry {e3}, Stop {s3}. Mode: {m3}.")
+            if alt_bits:
+                lines.append(" ".join(alt_bits))
+        lines.append("")
+
+    render_block("GO (ready/high-conviction)", go)
+    render_block("Watchlist (needs confirm)", wt)
+
+    Path(args.out).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"Wrote {args.out} (GO={len(go)}; Watch={len(wt)}).")
+
+if __name__ == "__main__":
+    main()
