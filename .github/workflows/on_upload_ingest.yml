@@ -92,14 +92,23 @@ jobs:
           printf "last_trading_day=%s\n" "$last" >> out/WEEK_RUNSTAMP.txt
           cat out/WEEK_RUNSTAMP.txt
 
-      - name: Stage results
-        run: |
-          set -e
-          git add data/prices/bhav_hist.csv data/tech_latest.csv data/highlow_52w.csv 2>/dev/null || true
-          git add data/prices/bhav_latest.csv 2>/dev/null || true
-          git add data/*status.json 2>/dev/null || true
-          git add out 2>/dev/null || true
-          git status --porcelain
+# ---- Stage results (updated to include ref/*.csv) ----
+- name: Stage results
+  run: |
+    set -e
+    # Data & outputs
+    git add data/prices/bhav_hist.csv data/tech_latest.csv data/highlow_52w.csv 2>/dev/null || true
+    git add data/prices/bhav_latest.csv 2>/dev/null || true
+    git add data/*status.json 2>/dev/null || true
+    git add out 2>/dev/null || true
+
+    # NEW: sector map (if ensure_sector_map.py wrote it)
+    mkdir -p ref
+    git add ref/symbol_sector.csv 2>/dev/null || true
+    git add ref/symbol_sector_overrides.csv 2:/dev/null || true
+    # or simply: git add ref 2>/dev/null || true
+
+    git status --porcelain
 
       - name: Commit (skip if no changes)
         run: |
