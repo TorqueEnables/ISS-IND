@@ -251,7 +251,7 @@ def main():
     df["UpVol3"]    = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
     df["DownVol3"]  = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
 
-    # Snapshot (last day)
+    # Snapshot (last day) ---------------------------------------------
     last = df[df["Date"]==last_day][[
         "Symbol","Series","Open","High","Low","Close","PrevClose",
         "SMA10","SMA20","SMA50","SMA200","ATR14","ATR_PCT",
@@ -260,6 +260,20 @@ def main():
     ]].copy()
     last = last.merge(pct_df, on="Symbol", how="left")
     last = last.merge(last_rs[["Symbol","RS_4W_Z","RS_13W_Z"]], on="Symbol", how="left")
+
+    # ---- Derived fields needed later (define BEFORE PocketPivot10) ----
+    last["UpVolDom10"]  = (last["UpVol10"] > last["DownVol10"]).fillna(False)
+    last["UpVol3Ratio"] = (last["UpVol3"] / last["DownVol3"]).replace([np.inf, -np.inf], np.nan)
+    last["SqueezeScore"] = (1.0 - last["BBWidth_pctile_20"].clip(0,1))
+    last["MA_Aligned"]   = ((last["SMA20"] > last["SMA50"]) & (last["SMA50"] > last["SMA200"]))
+
+    # ---- Inside-day detection on last bar (only bring PrevHigh/PrevLow) ----
+    prev_hl = df[df["Date"] == last_day][["Symbol", "PrevHigh", "PrevLow"]].copy()
+    last = last.merge(prev_hl, on="Symbol", how="left")
+    last["InsideDay"]  = (last["High"] < last["PrevHigh"]) & (last["Low"] > last["PrevLow"])
+    last["InsideDay"]  = last["InsideDay"].fillna(False)
+    last["InsideHigh"] = last["High"]
+    last["InsideLow"]  = last["Low"]
 
     # Inside-day detection on last bar  -------------------------------
     # We already have today's High/Low in `last`. Only bring PrevHigh/PrevLow.
