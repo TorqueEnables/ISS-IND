@@ -379,3 +379,9 @@ def main():
         "TurnoverCr_med20","DelivValCr_med20","ATR_PCT",
         "MA_Aligned","Near52w","SETUP_FAMILY","AsOf"
     ]].reset_index(drop=True)
+
+    final.to_csv(out_path, index=False)
+    print(f"Wrote {out_path} with {len(final)} rows for {pd.to_datetime(last_day).date()}")
+
+if __name__ == "__main__":
+    main()
