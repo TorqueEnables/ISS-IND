@@ -81,19 +81,19 @@ jobs:
         run: |
           mkdir -p out
           python - <<'PY' > out/WEEK_RUNSTAMP.txt
-from datetime import datetime
-import pandas as pd, pathlib as P
-hist = P.Path('data/prices/bhav_hist.csv')
-last = 'NA'
-try:
-    df = pd.read_csv(hist, parse_dates=['Date'])
-    if not df.empty:
-        last = str(df['Date'].max())[:10]
-except Exception:
-    pass
-print(f"run_ist={datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}")
-print(f"last_trading_day={last}")
-PY
+          from datetime import datetime
+          import pandas as pd, pathlib as P
+          hist = P.Path('data/prices/bhav_hist.csv')
+          last = 'NA'
+        try:
+          df = pd.read_csv(hist, parse_dates=['Date'])
+        if not df.empty:
+          last = str(df['Date'].max())[:10]
+        except Exception:
+          pass
+          print(f"run_ist={datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}")
+          print(f"last_trading_day={last}")
+          PY
 
       - name: Stage results
         run: |
