@@ -261,19 +261,18 @@ def main():
     last = last.merge(pct_df, on="Symbol", how="left")
     last = last.merge(last_rs[["Symbol","RS_4W_Z","RS_13W_Z"]], on="Symbol", how="left")
 
-    # Inside-day detection on last bar
-    last = last.merge(
-        df[df["Date"]==last_day][["Symbol","PrevHigh","PrevLow","High","Low"]],
-        on="Symbol", how="left", suffixes=("","")
-    )
-    last["InsideDay"]  = (last["High"] < last["PrevHigh"]) & (last["Low"] > last["PrevLow"])
+    # Inside-day detection on last bar  -------------------------------
+    # We already have today's High/Low in `last`. Only bring PrevHigh/PrevLow.
+    prev_hl = df[df["Date"] == last_day][["Symbol", "PrevHigh", "PrevLow"]].copy()
+    last = last.merge(prev_hl, on="Symbol", how="left")
+
+    # Inside day = today's range fully inside yesterday's range
+    last["InsideDay"] = (last["High"] < last["PrevHigh"]) & (last["Low"] > last["PrevLow"])
+    last["InsideDay"] = last["InsideDay"].fillna(False)
+
+    # For the Plan-C levels, we use the inside day’s own extremes
     last["InsideHigh"] = last["High"]
     last["InsideLow"]  = last["Low"]
-
-    last["UpVolDom10"]  = (last["UpVol10"] > last["DownVol10"]).fillna(False)
-    last["UpVol3Ratio"] = (last["UpVol3"] / last["DownVol3"]).replace([np.inf, -np.inf], np.nan)
-    last["SqueezeScore"] = (1.0 - last["BBWidth_pctile_20"].clip(0,1))
-    last["MA_Aligned"]   = ((last["SMA20"] > last["SMA50"]) & (last["SMA50"] > last["SMA200"]))
 
     # Near 52w proxy + breakout
     gmax = g["Close"].transform(lambda s: s.rolling(252, min_periods=60).max())
