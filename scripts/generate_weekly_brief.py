@@ -34,7 +34,7 @@ as_of = as_of or datetime.now().date()
 
 # Split GO and WATCH
 pack["GO"] = pack["GO"].astype(bool) if "GO" in pack.columns else False
-go_df = pack[pack["GO"]].sort_values("R_SCORE", ascending=False).head(8)
+go_df = pack[pack["GO"]].sort_values("R_SCORE", ascending=False)
 wt_df = pack[~pack["GO"]].sort_values("R_SCORE", ascending=False).head(8)
 
 def fline(r):
