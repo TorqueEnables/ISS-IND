@@ -193,8 +193,14 @@ def main():
     df["SMA20"]  = g["Close"].transform(lambda s: s.rolling(20, min_periods=10).mean())
     df["SMA50"]  = g["Close"].transform(lambda s: s.rolling(50, min_periods=25).mean())
     df["SMA200"] = g["Close"].transform(lambda s: s.rolling(200, min_periods=100).mean())
-    df["TR"]     = g.apply(true_range)
-    df["ATR14"]  = g["TR"].transform(lambda s: s.rolling(14, min_periods=10).mean())
+    # previous close per symbol
+    pc = df.groupby("Symbol")["Close"].shift(1)
+    tr1 = df["High"] - df["Low"]
+    tr2 = (df["High"] - pc).abs()
+    tr3 = (df["Low"]  - pc).abs()
+    df["TR"] = np.maximum.reduce([tr1, tr2, tr3])
+    df["ATR14"] = df.groupby("Symbol")["TR"].transform(lambda s: s.rolling(14, min_periods=10).mean())
+
     df["ATR_PCT"]= df["ATR14"] / df["Close"]
     rng = (df["High"] - df["Low"]).replace(0, np.nan)
     df["CloseLoc"] = ((df["Close"] - df["Low"]) / rng).clip(0,1)
@@ -216,10 +222,12 @@ def main():
     # Volume signals
     df["UpBar"]   = df["Close"] > df["PrevClose"]
     df["DownBar"] = df["Close"] < df["PrevClose"]
-    df["UpVol10"]   = g.apply(lambda d: (d["UpBar"]*d["Volume"]).rolling(10, min_periods=10).sum())
-    df["DownVol10"] = g.apply(lambda d: (d["DownBar"]*d["Volume"]).rolling(10, min_periods=10).sum())
-    df["UpVol3"]   = g.apply(lambda d: (d["UpBar"]*d["Volume"]).rolling(3,  min_periods=3 ).sum())
-    df["DownVol3"] = g.apply(lambda d: (d["DownBar"]*d["Volume"]).rolling(3,  min_periods=3 ).sum())
+    upv   = (df["UpBar"].astype(int)   * df["Volume"])
+    downv = (df["DownBar"].astype(int) * df["Volume"])
+    df["UpVol10"]   = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(10, min_periods=10).sum())
+    df["DownVol10"] = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(10, min_periods=10).sum())
+    df["UpVol3"]    = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
+    df["DownVol3"]  = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
 
     # Snapshot (last day)
     last = df[df["Date"]==last_day][[
