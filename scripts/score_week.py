@@ -43,7 +43,7 @@ VIX_TIGHTEN_PCTL     = 0.80  # if VIX ≥ 80th pct and NIFTY < 50DMA, tighten ru
 PROX_ATR_TIGHT       = 0.50  # legacy (unused now)
 UPVOL3_RATIO_TIGHT   = 1.40  # stronger power requirement in high-vol regime
 
-# New: dynamic proximity caps & hybrid buffers
+# Dynamic proximity caps & hybrid buffers
 PROX_ATR_BASE        = 0.30  # baseline cap when tape is neutral/soft
 PROX_ATR_RISK_ON     = 0.45  # allow farther when breadth/dispersion are strong
 PROX_ATR_HIGHVOL     = 0.25  # tighten further in high-vol regime
@@ -84,11 +84,6 @@ def zscore(x: pd.Series):
     mu = x.mean(); sd = x.std(ddof=0)
     if not np.isfinite(sd) or sd == 0: return (x*0).fillna(0)
     return (x - mu) / sd
-
-def true_range(df):
-    pc = df["Close"].shift(1)
-    tr = pd.concat([df["High"]-df["Low"], (df["High"]-pc).abs(), (df["Low"]-pc).abs()], axis=1).max(axis=1)
-    return tr
 
 def bb_width_20(s):
     ma = s.rolling(20, min_periods=20).mean()
@@ -182,7 +177,7 @@ def main():
     df = df[df["Symbol"].isin(keep_syms)].copy()
     g  = df.groupby("Symbol", group_keys=False)
 
-    # Previous H/L for patterns
+    # <<< PrevHigh/PrevLow RIGHT AFTER groupby (fix) >>>
     df["PrevHigh"] = g["High"].shift(1)
     df["PrevLow"]  = g["Low"].shift(1)
 
@@ -267,24 +262,11 @@ def main():
     last["SqueezeScore"] = (1.0 - last["BBWidth_pctile_20"].clip(0,1))
     last["MA_Aligned"]   = ((last["SMA20"] > last["SMA50"]) & (last["SMA50"] > last["SMA200"]))
 
-    # ---- Inside-day detection on last bar (only bring PrevHigh/PrevLow) ----
+    # ---- Inside-day detection on last bar (bring PrevHigh/PrevLow once) ----
     prev_hl = df[df["Date"] == last_day][["Symbol", "PrevHigh", "PrevLow"]].copy()
     last = last.merge(prev_hl, on="Symbol", how="left")
     last["InsideDay"]  = (last["High"] < last["PrevHigh"]) & (last["Low"] > last["PrevLow"])
     last["InsideDay"]  = last["InsideDay"].fillna(False)
-    last["InsideHigh"] = last["High"]
-    last["InsideLow"]  = last["Low"]
-
-    # Inside-day detection on last bar  -------------------------------
-    # We already have today's High/Low in `last`. Only bring PrevHigh/PrevLow.
-    prev_hl = df[df["Date"] == last_day][["Symbol", "PrevHigh", "PrevLow"]].copy()
-    last = last.merge(prev_hl, on="Symbol", how="left")
-
-    # Inside day = today's range fully inside yesterday's range
-    last["InsideDay"] = (last["High"] < last["PrevHigh"]) & (last["Low"] > last["PrevLow"])
-    last["InsideDay"] = last["InsideDay"].fillna(False)
-
-    # For the Plan-C levels, we use the inside day’s own extremes
     last["InsideHigh"] = last["High"]
     last["InsideLow"]  = last["Low"]
 
@@ -391,7 +373,7 @@ def main():
     atr_ok = lq_ok[lq_ok["ATR_OK"]]
     fam_ok = atr_ok[atr_ok["ANY_FAM"]].copy()
 
-    # ---- Scoring (unchanged weights) ----
+    # ---- Scoring ----
     def liquidity_score(row):
         tt = min(1.0, (row["TurnoverCr_med20"] or 0)/20.0)
         dd = 0.5 if pd.isna(row.get("DelivValCr_med20", np.nan)) else min(1.0, (row["DelivValCr_med20"] or 0)/8.0)
@@ -539,22 +521,30 @@ def main():
     out_df = out_df.sort_values(["GO","R_SCORE"], ascending=[False, False]).head(args.top)
     out_df.to_csv(out_path, index=False)
 
-    # Report
+    # Safe GO count when empty
+    go_count = int(out_df["GO"].sum()) if "GO" in out_df.columns else 0
+
+    # Report (stage counts)
+    lq_count  = int(len(lq_ok))
+    atr_count = int(len(atr_ok))
+    fam_count = int(len(fam_ok))
+
     report = [
         f"### WEEK GATE REPORT — {str(last_day)[:10]}",
         f"- Turnover unit chosen: {chosen}",
         f"- Total symbols (last-day snapshot): {total_syms}",
         f"- Universe OK (EQ, price ≥ {int(args.min_close)}, purge ETFs): {uni_syms}",
-        f"- Liquidity OK (Turnover_20 ≥ {args.turnover_cr_20} cr; Deliverable_20 ≥ {args.deliv_cr_20} cr or NA): {int(df[df['Date']==last_day].merge(snap[['Symbol','UNIVERSE_OK']], on='Symbol').query('UNIVERSE_OK == True')['Symbol'].nunique())}",
-        f"- ATR% OK ({args.atr_min*100:.0f}%–{args.atr_max*100:.0f}%): {len(out_df)} (after full gating & top cap: {args.top})",
+        f"- Liquidity OK (Turnover_20 ≥ {args.turnover_cr_20} cr; Deliverable_20 ≥ {args.deliv_cr_20} cr or NA): {lq_count}",
+        f"- ATR% OK ({args.atr_min*100:.0f}%–{args.atr_max*100:.0f}%): {atr_count}",
+        f"- Family match (RS/Pullback/Breakout): {fam_count}",
         f"- Market breadth (%% >20DMA): {breadth20*100:.1f}%",
         f"- Dispersion (stdev 4W returns): {disp4w*100:.1f}%",
         f"- Macro tighten active: {'YES' if high_vol_tighten else 'NO'}",
-        f"- Sector map: {'present' if secmap is not None else 'absent'}",
+        f"- Sector map: {'present' if 'secmap' in locals() and secmap is not None else 'absent'}",
     ]
     Path("out").mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(report) + "\n", encoding="utf-8")
-    print(f"Wrote {out_path} with {len(out_df)} rows for {pd.to_datetime(last_day).date()} (GO={int(out_df['GO'].sum())})")
+    print(f"Wrote {out_path} with {len(out_df)} rows for {pd.to_datetime(last_day).date()} (GO={go_count})")
 
 if __name__ == "__main__":
     main()
