@@ -17,6 +17,8 @@ acting.
 - **PAYTM** — score 83.9, last close 1332.9. Plan: Entry 1342.68, Stop 1299.68. Mode: BREAKOUT. Proximity: 0.32 ATR. Signals: RS_LEADER,POCKET_PIVOT,UPVOL_DOM,NEAR_52W,COILED. Note: MARKET_OK.
 - **TBOTEK** — score 78.0, last close 1617.0. Plan: Entry 1638.15, Stop 1547.46. Mode: BREAKOUT. Proximity: 0.33 ATR. Signals: RS_LEADER,POCKET_PIVOT,UPVOL_DOM,NEAR_52W,COILED. Note: MARKET_OK.
 - **ICICIGI** — score 77.4, last close 2042.9. Plan: Entry 2062.66, Stop 1997.78. Mode: BREAKOUT. Proximity: 0.48 ATR. Signals: RS_LEADER,POCKET_PIVOT,UPVOL_DOM,NEAR_52W,COILED. Note: MARKET_OK.
+- **MAHABANK** — score 75.2, last close 59.91. Plan: Entry 60.63, Stop 57.97. Mode: BREAKOUT. Proximity: 0.41 ATR. Signals: RS_LEADER,POCKET_PIVOT,UPVOL_DOM,NEAR_52W,COILED. Note: MARKET_OK.
+- **INDIACEM** — score 68.7, last close 412.15. Plan: Entry 417.07, Stop 398.17. Mode: BREAKOUT. Proximity: 0.39 ATR. Signals: RS_LEADER,POCKET_PIVOT,UPVOL_DOM,NEAR_52W,COILED. Note: MARKET_OK.
 
 ## Watchlist (needs confirm)
 - **MTARTECH** — score 128.8, last close 2628.6. Plan: Entry 2696.41, Stop 2501.02. Mode: BREAKOUT. Proximity: 0.58 ATR. Signals: RS_LEADER,POCKET_PIVOT,UPVOL_DOM,NEAR_52W. Note: Weak close; Not coiled; Sector weak (b0.40, z-0.00).

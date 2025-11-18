@@ -1,2 +1,2 @@
-run_ist=2025-11-18 14:53:46 IST
+run_ist=2025-11-18 15:13:33 IST
 last_trading_day=2025-11-17
