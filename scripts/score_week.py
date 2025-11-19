@@ -384,7 +384,8 @@ def main():
     # RS
     df["RET_20"] = g["Close"].transform(lambda s: s.pct_change(20))
     df["RET_65"] = g["Close"].transform(lambda s: s.pct_change(65))
-    last_rs = df[df["Date"]==last_day][["Symbol","RET_20","RET_65"]].copy()
+    df["RET_10"] = g["Close"].transform(lambda s: s.pct_change(10))
+    last_rs = df[df["Date"]==last_day][["Symbol","RET_20","RET_65","RET_10"]].copy()
     last_rs["RS_4W_Z"]  = zscore(last_rs["RET_20"].fillna(0))
     last_rs["RS_13W_Z"] = zscore(last_rs["RET_65"].fillna(0))
 
@@ -396,7 +397,7 @@ def main():
     df["UpVol10"]   = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(10, min_periods=10).sum())
     df["DownVol10"] = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(10, min_periods=10).sum())
     df["UpVol3"]    = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
-    df["DownVol3"]  = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
+    df["DownVol3"]  = downv.groupby[df["Symbol"]].transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
 
     # Snapshot (last day) ---------------------------------------------
     base_cols = [
@@ -412,7 +413,7 @@ def main():
     if "DelivValCr" not in last.columns:
         last["DelivValCr"] = np.nan
     last = last.merge(pct_df, on="Symbol", how="left")
-    last = last.merge(last_rs[["Symbol","RS_4W_Z","RS_13W_Z"]], on="Symbol", how="left")
+    last = last.merge(last_rs[["Symbol","RS_4W_Z","RS_13W_Z","RET_10"]], on="Symbol", how="left")
 
     # ---- Derived fields needed later (define BEFORE PocketPivot10) ----
     last["UpVolDom10"]  = (last["UpVol10"] > last["DownVol10"]).fillna(False)
@@ -506,16 +507,30 @@ def main():
         tmp["ABV20"] = tmp["Close"] > tmp["SMA20"]
         sec_breadth = tmp.groupby("Sector")["ABV20"].mean().to_dict()
         last["SECTOR_BREADTH20"] = last["Sector"].map(sec_breadth).fillna(0.0)
-        # sector RS: median 4W RS within sector (z-scored across sectors)
-        rs_by_sec = df[df["Date"]==last_day].merge(secmap, on="Symbol", how="left").fillna({"Sector":"OTHER"}) \
-                       .groupby("Sector")["RET_20"].median().rename("SEC_RET_20")
-        rs_sec = rs_by_sec.to_frame().reset_index()
+
+        # sector RS & 10D returns
+        sec_slice = df[df["Date"]==last_day].merge(secmap, on="Symbol", how="left").fillna({"Sector":"OTHER"})
+        rs_by_sec = sec_slice.groupby("Sector")["RET_20"].median().rename("SEC_RET_20")
+        ret10_by_sec = sec_slice.groupby("Sector")["RET_10"].median().rename("SEC_RET_10")
+
+        rs_sec = rs_by_sec.to_frame().join(ret10_by_sec, how="left").reset_index()
         rs_sec["SEC_RS_Z"] = zscore(rs_sec["SEC_RET_20"].fillna(0))
-        last = last.merge(rs_sec[["Sector","SEC_RS_Z"]], on="Sector", how="left")
+
+        last = last.merge(rs_sec[["Sector","SEC_RS_Z","SEC_RET_10"]], on="Sector", how="left")
+        last["SEC_RET_10"] = last["SEC_RET_10"].fillna(0.0)
+        # stock vs sector 10D edge
+        last["RET10_EDGE_SEC"] = last["RET_10"].fillna(0.0) - last["SEC_RET_10"]
+        # momentum gates (optimized from friend’s strict 2% rule)
+        last["SECTOR_MOM_OK"] = (last["SEC_RS_Z"] > -0.5) | (last["RS_4W_Z"] > 1.5)
+        last["STOCK_VS_SEC_OK"] = (last["RET10_EDGE_SEC"] >= -0.01)
     else:
         last["Sector"] = "OTHER"
         last["SECTOR_BREADTH20"] = 0.0
         last["SEC_RS_Z"] = 0.0
+        last["SEC_RET_10"] = 0.0
+        last["RET10_EDGE_SEC"] = 0.0
+        last["SECTOR_MOM_OK"] = True
+        last["STOCK_VS_SEC_OK"] = True
 
     # ---- Macro regime (optional) ----
     vix_df   = try_read_csv(Path("data/index/INDIAVIX.csv"))
@@ -669,6 +684,10 @@ def main():
                 if np.isfinite(rr_stop):
                     rr_ok = rr_stop >= RR_MIN_HI55
 
+        # Sector momentum gates
+        sector_mom_ok   = bool(r.get("SECTOR_MOM_OK", True))
+        stock_vs_sec_ok = bool(r.get("STOCK_VS_SEC_OK", True))
+
         # ---- Three paths to GO ----
         go_reason = None
         market_ok = (breadth20 >= BREADTH20_MIN) or (disp4w >= DISPERSION_4W_MIN)
@@ -683,11 +702,11 @@ def main():
         stock_only_ok = (r["RS_4W_Z"] >= 1.0) and power_ok and coil_ok and prox_ok and loc_ok
 
         go_flag = False
-        if market_ok and power_ok and prox_ok and loc_ok and coil_ok and lq_strong and trend_ok and rr_ok:
+        if market_ok and power_ok and prox_ok and loc_ok and coil_ok and lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok:
             go_flag = True; go_reason = "MARKET_OK"
-        elif sector_ok and power_ok and prox_ok and loc_ok and coil_ok and lq_strong and trend_ok and rr_ok:
+        elif sector_ok and power_ok and prox_ok and loc_ok and coil_ok and lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok:
             go_flag = True; go_reason = "SECTOR_OK"
-        elif stock_only_ok and lq_strong and trend_ok and rr_ok:
+        elif stock_only_ok and lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok:
             go_flag = True; go_reason = "STOCK_ONLY"
 
         # Diagnostics
@@ -708,6 +727,10 @@ def main():
             reasons.append(f"Breadth {breadth20*100:.0f}%/Disp {disp4w*100:.1f}%")
         if "SECTOR_BREADTH20" in r and not sector_ok:
             reasons.append(f"Sector weak (b{r.get('SECTOR_BREADTH20',0):.2f}, z{r.get('SEC_RS_Z',0):+.2f})")
+        if not sector_mom_ok:
+            reasons.append(f"Sector drag (SEC_RS_Z {r.get('SEC_RS_Z',0):+.2f})")
+        if not stock_vs_sec_ok:
+            reasons.append(f"Underperforming sector (10D edge {r.get('RET10_EDGE_SEC',0):+.1%})")
 
         rows.append({
             "Symbol": r["Symbol"], "Series": r["Series"], "Close": r["Close"],
@@ -744,6 +767,11 @@ def main():
             "LQ_STRONG": lq_strong,
             "TREND_OK": trend_ok,
             "RR_HI55": rr_stop,
+            "RET_10": r.get("RET_10", np.nan),
+            "SEC_RET_10": r.get("SEC_RET_10", np.nan),
+            "RET10_EDGE_SEC": r.get("RET10_EDGE_SEC", np.nan),
+            "SECTOR_MOM_OK": sector_mom_ok,
+            "STOCK_VS_SEC_OK": stock_vs_sec_ok,
             "GO": bool(go_flag),
             "GO_REASONS": go_reason if go_flag else ("; ".join(reasons) if reasons else "Needs confirm"),
             "MKT_BREADTH20": round(breadth20,3),
