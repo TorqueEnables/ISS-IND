@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-StakeLens Insider — Weekly Brief generator.
+StakeLens Insider — Weekly Brief generator (pretty version).
 
-Reads WEEK_PACK.csv and emits a human-readable weekly brief:
+Reads WEEK_PACK.csv and emits a human-friendly weekly brief:
+
 - Header: date, breadth, dispersion
-- GO list with Plans A/B/C, reasons, and sector context
-- Watchlist (top non-GO names by score)
+- GO list: one block per stock with clear bullets and indentation
+- Watchlist: top non-GO names with concise context
 
-This version is aware of:
-- Sector momentum (SEC_RS_Z, SECTOR_BREADTH20, SECTOR_MOM_OK)
-- Stock vs sector 10D edge (RET10_EDGE_SEC, STOCK_VS_SEC_OK)
-- Flow / structural reasons kept via WHY + GO_REASONS
+Uses the enriched fields from score_week.py:
+- Sector: Sector, SECTOR_BREADTH20, SEC_RS_Z
+- Stock vs sector: RET_10, SEC_RET_10, RET10_EDGE_SEC
+- Momentum flags: SECTOR_MOM_OK, STOCK_VS_SEC_OK
 """
 
 import argparse
@@ -19,6 +20,8 @@ import pandas as pd
 import numpy as np
 
 
+# ---------- CLI ----------
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--pack", default="out/WEEK_PACK.csv")
@@ -26,6 +29,8 @@ def parse_args():
     p.add_argument("--watch_limit", type=int, default=15)
     return p.parse_args()
 
+
+# ---------- Formatting helpers ----------
 
 def _fmt_pct(x, decimals=1, factor=100.0, suffix="%"):
     if pd.isna(x):
@@ -47,90 +52,115 @@ def _fmt_ret_edge(x):
 
 def _fmt_price(x):
     if pd.isna(x):
-        return "NA"
+        return "—"
     return f"{x:.2f}"
 
 
 def _fmt_score(x):
     if pd.isna(x):
-        return "NA"
+        return "—"
     return f"{x:.2f}"
 
 
+def _safe_bool(val, default=False):
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    return default
+
+
 def _plan_block(row):
-    """Format Plan A/B/C text for a single row."""
+    """
+    Return markdown with indented bullets:
+
+      - **Plan A**: Entry X, Stop Y, Mode Z
+      - **Plan B**: ...
+      - **Plan C**: ...
+    """
     lines = []
 
-    def plan_line(label, e_col, s_col, m_col):
+    def one_plan(label, e_col, s_col, m_col):
         e = row.get(e_col, np.nan)
         s = row.get(s_col, np.nan)
         m = row.get(m_col, "")
-        if pd.isna(e) or pd.isna(s) or (not isinstance(m, str)) or m == "":
-            return f"{label}: Entry —, Stop —, Mode —"
-        return f"{label}: Entry {_fmt_price(e)}, Stop {_fmt_price(s)}, Mode {m}"
+        if pd.isna(e) or pd.isna(s) or not isinstance(m, str) or m.strip() == "":
+            return f"  - **{label}**: Entry —, Stop —, Mode —"
+        return f"  - **{label}**: Entry {_fmt_price(e)}, Stop {_fmt_price(s)}, Mode {m}"
 
-    lines.append(plan_line("Plan A", "Entry", "SL", "EntryMode"))
-    lines.append(plan_line("Plan B", "Entry2", "SL2", "Mode2"))
-    lines.append(plan_line("Plan C", "Entry3", "SL3", "Mode3"))
+    lines.append(one_plan("Plan A", "Entry", "SL", "EntryMode"))
+    lines.append(one_plan("Plan B", "Entry B", "SL2", "Mode2"))  # label text only
+    lines[-1] = one_plan("Plan B", "Entry2", "SL2", "Mode2")    # avoid typo in column
+    lines.append(one_plan("Plan C", "Entry3", "SL3", "Mode3"))
     return "\n".join(lines)
 
 
 def _sector_context(row):
-    """Build one short sector/momentum line per stock."""
+    """
+    One short, readable line summarising sector & momentum.
+
+    Example:
+    Sector: FINANCIALS — breadth 62%, RS z +0.80, 10D vs sector +1.2%
+      - View: riding sector + stock momentum
+    """
     sector = row.get("Sector", "OTHER")
-    sb    = row.get("SECTOR_BREADTH20", np.nan)
-    sz    = row.get("SEC_RS_Z", np.nan)
-    edge  = row.get("RET10_EDGE_SEC", np.nan)
-    sec_ok   = bool(row.get("SECTOR_MOM_OK", True))
-    stock_ok = bool(row.get("STOCK_VS_SEC_OK", True))
+    sb     = row.get("SECTOR_BREADTH20", np.nan)
+    sz     = row.get("SEC_RS_Z", np.nan)
+    edge   = row.get("RET10_EDGE_SEC", np.nan)
 
-    parts = [f"Sector: {sector}"]
+    sec_ok   = _safe_bool(row.get("SECTOR_MOM_OK", True), True)
+    stock_ok = _safe_bool(row.get("STOCK_VS_SEC_OK", True), True)
 
+    headline_parts = [f"Sector: {sector}"]
     if not pd.isna(sb):
-        parts.append(f"breadth {_fmt_pct(sb, 0)}")
+        headline_parts.append(f"breadth {_fmt_pct(sb, 0)}")
     if not pd.isna(sz):
-        parts.append(f"RS z {_fmt_z(sz)}")
+        headline_parts.append(f"RS z {_fmt_z(sz)}")
     if not pd.isna(edge):
-        parts.append(f"10D vs sector {_fmt_ret_edge(edge)}")
+        headline_parts.append(f"10D vs sector {_fmt_ret_edge(edge)}")
 
-    # Qualitative flags
-    qual = []
+    # Qualitative view
     if sec_ok and stock_ok:
-        qual.append("riding sector + stock momentum")
+        view = "riding sector + stock momentum"
     elif sec_ok and not stock_ok:
-        qual.append("sector ok, stock lagging (be picky on entries)")
+        view = "sector ok, stock lagging (be picky on entries)"
     elif (not sec_ok) and stock_ok:
-        qual.append("stock outperforming a weak sector (elite only)")
+        view = "stock outperforming a weak sector (elite only)"
     else:
-        qual.append("both sector and stock are under pressure")
+        view = "both sector and stock are under pressure"
 
-    parts.append(" | " + "; ".join(qual))
-    return " ".join(parts)
+    lines = []
+    lines.append("  - " + " — ".join(headline_parts))
+    lines.append(f"  - View: {view}")
+    return "\n".join(lines)
 
 
 def _slippage_hint(row):
     """
-    Very rough slippage / execution hint:
-    - High ATR% or low turnover => call out as potentially jumpy.
+    Execution hint:
+      - flags high ATR% / low turnover
     """
     atr_pct = row.get("ATR_PCT", np.nan)
     t20     = row.get("TurnoverCr_med20", np.nan)
 
-    msgs = []
     if pd.isna(atr_pct) or pd.isna(t20):
-        return "Execution: normal; respect your max risk per trade."
+        return "  - Execution: normal; keep risk per trade fixed."
 
+    msgs = []
     if atr_pct >= 0.08:
-        msgs.append("High volatility (ATR% elevated)")
+        msgs.append("high volatility (ATR% elevated)")
     if t20 < 10:
-        msgs.append("Thinner liquidity (<10cr med turnover)")
+        msgs.append("thin liquidity (<10cr 20D median turnover)")
     elif t20 < 20:
-        msgs.append("Moderate liquidity (~10–20cr med turnover)")
+        msgs.append("moderate liquidity (~10–20cr 20D median turnover)")
 
     if not msgs:
-        return "Execution: decent liquidity and moderate ATR – standard position sizing."
-    return "Execution: " + "; ".join(msgs) + ". Size down / use limit orders."
+        return "  - Execution: decent liquidity and moderate ATR – standard sizing."
 
+    return "  - Execution: " + "; ".join(msgs) + " — size down / use limit orders."
+
+
+# ---------- Sections ----------
 
 def build_header(df):
     asof = str(df["AsOf"].iloc[0]) if "AsOf" in df.columns else "NA"
@@ -151,21 +181,18 @@ def build_how_to(df):
 
     lines = []
     lines.append("How to read this")
-    lines.append(
-        "Start with Plan A. If it does not trigger, consider Plan B (reclaim) or Plan C (inside-day), when shown."
-    )
-    lines.append("Keep risk fixed per trade. Avoid wide gaps; prefer orderly triggers.")
-
+    lines.append("")
+    lines.append("- Start with **Plan A**. If it does not trigger, look at Plan B (reclaim) or Plan C (inside-day), when present.")
+    lines.append("- Keep **risk per trade fixed**. Avoid wide gap-ups; prefer orderly triggers.")
     if not pd.isna(breadth):
         if breadth < 0.40:
-            lines.append("Breadth is weak: treat GO as elite only and be strict with entries.")
+            lines.append("- Breadth is weak → treat GO as **elite only**, be strict with entries and avoid late chases.")
         elif breadth > 0.60:
-            lines.append("Breadth is strong: you can be slightly more open with quality setups.")
+            lines.append("- Breadth is strong → you can be slightly more open with **high-quality** setups.")
         else:
-            lines.append("Breadth is mixed: prioritize names with strong GO reasons or clear sector support.")
+            lines.append("- Breadth is mixed → prioritize names with **clear GO reasons** or **strong sector support**.")
     else:
-        lines.append("Prioritize names with strong GO reasons or clear sector support.")
-
+        lines.append("- Prioritize names with **clear GO reasons** or **strong sector support**.")
     lines.append("")
     return "\n".join(lines)
 
@@ -173,8 +200,11 @@ def build_how_to(df):
 def build_go_section(go_df):
     lines = []
     lines.append("GO (ready / high conviction)")
+    lines.append("")
+
     if go_df.empty:
-        lines.append("No GO setups this run. Use the watchlist as your hunting ground for emerging ideas.")
+        lines.append("- No GO setups this run.")
+        lines.append("- Use the watchlist as your hunting ground for emerging ideas.")
         lines.append("")
         return "\n".join(lines)
 
@@ -185,27 +215,26 @@ def build_go_section(go_df):
         prox  = r.get("TriggerDistATR", np.nan)
         prox_txt = f"{prox:.2f} ATR" if pd.notna(prox) else "NA"
         go_reason = r.get("GO_REASONS", "NA")
+
         why_raw   = str(r.get("WHY", "") or "")
         signals   = [w for w in why_raw.split(",") if w]
 
-        lines.append(f"{sym} — score {score}, last close {close}")
+        lines.append(f"**{sym}** — score {score}, last close {_fmt_price(r.get('Close', np.nan))}")
         lines.append("")
+        # Plans
         lines.append(_plan_block(r))
         lines.append("")
-
+        # Signals / GO reason
         if signals:
-            lines.append("Signals: " + ", ".join(signals))
+            lines.append("  - Signals: " + ", ".join(signals))
         else:
-            lines.append("Signals: —")
-
-        lines.append(f"Proximity: {prox_txt}")
-        lines.append(f"Go reason: {go_reason}")
-
-        # Sector + slippage context
+            lines.append("  - Signals: —")
+        lines.append(f"  - Proximity to trigger: {prox_txt}")
+        lines.append(f"  - Go reason: {go_reason}")
+        # Sector + slippage
         lines.append(_sector_context(r))
         lines.append(_slippage_hint(r))
-
-        lines.append("")  # blank line between names
+        lines.append("")  # blank line between stocks
 
     lines.append("")
     return "\n".join(lines)
@@ -214,8 +243,10 @@ def build_go_section(go_df):
 def build_watch_section(watch_df, limit):
     lines = []
     lines.append("Watchlist (developing setups)")
+    lines.append("")
+
     if watch_df.empty:
-        lines.append("None this run.")
+        lines.append("- None this run.")
         lines.append("")
         return "\n".join(lines)
 
@@ -225,19 +256,21 @@ def build_watch_section(watch_df, limit):
         sym   = r["Symbol"]
         score = _fmt_score(r.get("R_SCORE", np.nan))
         close = _fmt_price(r.get("Close", np.nan))
-        reason = r.get("GO_REASONS", "Needs confirm")
-        prox = r.get("TriggerDistATR", np.nan)
+        prox  = r.get("TriggerDistATR", np.nan)
         prox_txt = f"{prox:.2f} ATR" if pd.notna(prox) else "NA"
+        reason = r.get("GO_REASONS", "Needs confirm")
 
-        lines.append(f"{sym} — score {score}, last close {close}")
-        lines.append(f"Proximity: {prox_txt}")
-        lines.append(f"Notes: {reason}")
+        lines.append(f"- **{sym}** — score {score}, last close {close}")
+        lines.append(f"  - Proximity: {prox_txt}")
+        lines.append(f"  - Note: {reason}")
         lines.append(_sector_context(r))
-        lines.append("")  # spacing
+        lines.append("")  # spacing between watch names
 
     lines.append("")
     return "\n".join(lines)
 
+
+# ---------- Main ----------
 
 def main():
     args = parse_args()
@@ -251,11 +284,14 @@ def main():
 
     if df.empty:
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text("StakeLens Insider — Weekly Brief\n\nNo data in WEEK_PACK.csv.\n", encoding="utf-8")
+        out_path.write_text(
+            "StakeLens Insider — Weekly Brief\n\nNo data in WEEK_PACK.csv.\n",
+            encoding="utf-8",
+        )
         print(f"Wrote empty brief to {out_path}")
         return
 
-    # Robust boolean handling
+    # Robust boolean for GO
     if "GO" in df.columns:
         df["GO"] = df["GO"].astype(bool)
     else:
