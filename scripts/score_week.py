@@ -4,14 +4,9 @@ StakeLens Insider — Weekly scorer with Sector Advantage + Macro Regimes.
 Now includes Plan-B (Reclaim) and Plan-C (Inside-day) entry options and
 a volatility/tick-aware breakout buffer, plus flow-aware scoring using
 insider trades, bulk/block deals, and delivery strength.
-
-Optional inputs (auto-skip if missing):
-- ref/symbol_sector.csv   -> columns: Symbol,Sector
-- data/index/NIFTY.csv    -> Date,Open,High,Low,Close (daily)
-- data/index/INDIAVIX.csv -> Date,Close (daily)
 """
 
-import argparse, re, os
+import argparse, re
 from datetime import timedelta
 from pathlib import Path
 import numpy as np
@@ -19,11 +14,15 @@ import pandas as pd
 
 # ---------------- Core thresholds ----------------
 MIN_CLOSE            = 50.0
-TURNOVER_CR_20_FLOOR = 5.0   # ₹ cr (20d median)
+TURNOVER_CR_20_FLOOR = 5.0   # ₹ cr (20d median) for candidate pool
 DELIV_CR_20_FLOOR    = 2.0   # ₹ cr (20d median)
 ATR_PCT_MIN          = 0.02  # 2%
 ATR_PCT_MAX          = 0.10  # 10% (slightly wider to include power names)
 TOP_LIMIT            = 50
+
+# GO-level extra gates
+LQ_GO_CR_MIN         = 10.0  # hard liquidity for GO
+RR_MIN_HI55          = 0.8   # min R:R vs 55D high for pre-breakouts
 
 # Go/No-Go (base)
 BREADTH20_MIN        = 0.45  # % of universe above 20DMA
@@ -194,7 +193,6 @@ def _recent_presence_flag(path: Path, last: pd.DataFrame, flag_name: str, days: 
     Set <flag_name> = 1 if the symbol appears at least once in the given
     deals file in the last `days` days, else 0. Robust to schema drift.
     """
-    # Default: no deals → 0
     if flag_name not in last.columns:
         last[flag_name] = 0
 
@@ -241,7 +239,6 @@ def attach_bulk_block_flags(last: pd.DataFrame) -> pd.DataFrame:
     last = _recent_presence_flag(Path("data/bulk_deals_latest.csv"),  last, "BULK_PLUS")
     last = _recent_presence_flag(Path("data/block_deals_latest.csv"), last, "BLOCK_PLUS")
     return last
-
 
 def attach_flow_and_penalty_features(last: pd.DataFrame) -> pd.DataFrame:
     """
@@ -437,11 +434,19 @@ def main():
     mx["MaxClose252"] = gmax[df["Date"]==last_day].values
     mx["Near52w"]     = (mx["Close"] >= 0.97 * mx["MaxClose252"])
     last = last.merge(mx[["Symbol","Near52w","MaxClose252"]], on="Symbol", how="left")
+
+    # Breakout: 40D high
     roll_hi_40 = g["High"].transform(lambda s: s.rolling(40, min_periods=25).max())
-    brk = df[df["Date"]==last_day][["Symbol","Close"]].copy()
+    brk = df[df["Date"]==last_day][["Symbol","Close","High"]].copy()
     brk["Hi40"]     = roll_hi_40[df["Date"]==last_day].values
     brk["Breakout"] = (brk["Close"] >= 1.01 * brk["Hi40"])
     last = last.merge(brk[["Symbol","Breakout","Hi40"]], on="Symbol", how="left")
+
+    # 55D high for R:R sanity
+    roll_hi_55 = g["High"].transform(lambda s: s.rolling(55, min_periods=25).max())
+    hi55_df = df[df["Date"]==last_day][["Symbol"]].copy()
+    hi55_df["Hi55"] = roll_hi_55[df["Date"]==last_day].values
+    last = last.merge(hi55_df, on="Symbol", how="left")
 
     # Families
     last["PocketPivot10"] = (
@@ -472,11 +477,12 @@ def main():
     snap_ma = df[df["Date"]==last_day][["Symbol","Close"]].merge(
         df[df["Date"]==last_day][["Symbol","SMA20"]], on="Symbol", how="left"
     ).merge(snap[["Symbol","UNIVERSE_OK"]], on="Symbol", how="left")
-    breadth20 = float((snap_ma.query("UNIVERSE_OK == True")["Close"] > snap_ma.query("UNIVERSE_OK == True")["SMA20"]).mean())
+    uni_mask = snap_ma["UNIVERSE_OK"] == True
+    breadth20 = float((snap_ma.loc[uni_mask, "Close"] > snap_ma.loc[uni_mask, "SMA20"]).mean())
     if not np.isfinite(breadth20): breadth20 = 0.0
     # dispersion: stdev of 4W returns among universe
-    disp4w = float(df[df["Date"]==last_day].merge(snap[["Symbol","UNIVERSE_OK"]], on="Symbol")\
-                   .query("UNIVERSE_OK == True")["RET_20"].std(ddof=0))
+    tmp_ret = df[df["Date"]==last_day].merge(snap[["Symbol","UNIVERSE_OK"]], on="Symbol")
+    disp4w = float(tmp_ret.loc[tmp_ret["UNIVERSE_OK"] == True, "RET_20"].std(ddof=0))
     if not np.isfinite(disp4w): disp4w = 0.0
 
     # ---- Sector mapping (optional) ----
@@ -638,6 +644,31 @@ def main():
         prox_ok  = prox <= base_prox_max
         coil_ok  = (r["SqueezeScore"] >= 0.60) if r["FAM_RS"] else True
 
+        # ---- GO-level extra gates ----
+        # Liquidity: 20d median turnover ≥ LQ_GO_CR_MIN
+        t20 = r.get("TurnoverCr_med20", np.nan)
+        t20_val = float(t20) if np.isfinite(t20) else 0.0
+        lq_strong = t20_val >= LQ_GO_CR_MIN
+
+        # Trend: prefer above 200DMA when SMA200 available
+        sma200 = r.get("SMA200", np.nan)
+        trend_ok = True
+        if np.isfinite(sma200):
+            trend_ok = r["Close"] >= sma200
+
+        # R:R vs 55D high for pre-breakout patterns (where 55D high is still above today's high)
+        hi55 = r.get("Hi55", np.nan)
+        rr_stop = np.nan
+        rr_ok = True
+        if np.isfinite(hi55):
+            high_today = float(r["High"])
+            if hi55 > high_today + 1e-6:
+                risk_stop = max(1e-6, entry - sl)
+                reward_hi = max(0.0, hi55 - entry)
+                rr_stop = reward_hi / risk_stop if risk_stop > 0 else np.nan
+                if np.isfinite(rr_stop):
+                    rr_ok = rr_stop >= RR_MIN_HI55
+
         # ---- Three paths to GO ----
         go_reason = None
         market_ok = (breadth20 >= BREADTH20_MIN) or (disp4w >= DISPERSION_4W_MIN)
@@ -652,11 +683,11 @@ def main():
         stock_only_ok = (r["RS_4W_Z"] >= 1.0) and power_ok and coil_ok and prox_ok and loc_ok
 
         go_flag = False
-        if market_ok and power_ok and prox_ok and loc_ok and coil_ok:
+        if market_ok and power_ok and prox_ok and loc_ok and coil_ok and lq_strong and trend_ok and rr_ok:
             go_flag = True; go_reason = "MARKET_OK"
-        elif sector_ok and power_ok and prox_ok and loc_ok and coil_ok:
+        elif sector_ok and power_ok and prox_ok and loc_ok and coil_ok and lq_strong and trend_ok and rr_ok:
             go_flag = True; go_reason = "SECTOR_OK"
-        elif stock_only_ok:
+        elif stock_only_ok and lq_strong and trend_ok and rr_ok:
             go_flag = True; go_reason = "STOCK_ONLY"
 
         # Diagnostics
@@ -665,6 +696,10 @@ def main():
         if not loc_ok:   reasons.append("Weak close")
         if not prox_ok:  reasons.append(f"Far ({prox:.2f} ATR)")
         if not coil_ok:  reasons.append("Not coiled")
+        if not lq_strong: reasons.append(f"LQ<10cr ({t20_val:.1f})")
+        if not trend_ok:  reasons.append("Below 200-DMA")
+        if not rr_ok and np.isfinite(rr_stop):
+            reasons.append(f"RR_HI55<{RR_MIN_HI55:.1f} ({rr_stop:.2f})")
         if "DELIV_Q4" in r and r.get("DELIV_Q4", 0) == 0:
             reasons.append("No delivery edge")
         if "INSIDER_PLUS" in r and r.get("INSIDER_PLUS", 0) == 0:
@@ -706,6 +741,9 @@ def main():
             "BLOCK_PLUS": r.get("BLOCK_PLUS",0),
             "BELOW_SMA20": r.get("BELOW_SMA20",0),
             "EXTENDED_BB": r.get("EXTENDED_BB",0),
+            "LQ_STRONG": lq_strong,
+            "TREND_OK": trend_ok,
+            "RR_HI55": rr_stop,
             "GO": bool(go_flag),
             "GO_REASONS": go_reason if go_flag else ("; ".join(reasons) if reasons else "Needs confirm"),
             "MKT_BREADTH20": round(breadth20,3),
