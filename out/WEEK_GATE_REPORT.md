@@ -1,11 +1,11 @@
-### WEEK GATE REPORT — 2025-11-18
+### WEEK GATE REPORT — 2025-11-19
 - Turnover unit chosen: lakhs→cr (/100)
 - Total symbols (last-day snapshot): 3045
-- Universe OK (EQ, price ≥ 50, purge ETFs): 1777
-- Liquidity OK (Turnover_20 ≥ 5.0 cr; Deliverable_20 ≥ 2.0 cr or NA): 869
-- ATR% OK (2%–8%): 775
-- Family match (RS/Pullback/Breakout): 57
-- Market breadth (%% >20DMA): 35.1%
-- Dispersion (stdev 4W returns): 11.4%
+- Universe OK (EQ, price ≥ 50, purge ETFs): 1779
+- Liquidity OK (Turnover_20 ≥ 5.0 cr; Deliverable_20 ≥ 2.0 cr or NA): 872
+- ATR% OK (2%–8%): 774
+- Family match (RS/Pullback/Breakout): 59
+- Market breadth (%% >20DMA): 34.3%
+- Dispersion (stdev 4W returns): 11.1%
 - Macro tighten active: NO
 - Sector map: present
