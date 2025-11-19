@@ -397,7 +397,7 @@ def main():
     df["UpVol10"]   = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(10, min_periods=10).sum())
     df["DownVol10"] = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(10, min_periods=10).sum())
     df["UpVol3"]    = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
-    df["DownVol3"]  = downv.groupby[df["Symbol"]].transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
+    df["DownVol3"]  = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
 
     # Snapshot (last day) ---------------------------------------------
     base_cols = [
@@ -537,13 +537,13 @@ def main():
     idx_df   = try_read_csv(Path("data/index/NIFTY.csv"))
     vix_pctl = np.nan
     nifty_below_50 = False
-    if vix_df is not None and "Close" in vix_df.columns:
+    if vix_df is not None and "Close" in vix_df.columns and len(vix_df) > 0:
         vix_df = vix_df.sort_values("Date")
         vix_past = vix_df.tail(180)["Close"]
         cur_vix  = vix_df["Close"].iloc[-1]
         if len(vix_past) >= 20:
             vix_pctl = float((vix_past <= cur_vix).mean())  # 0..1
-    if idx_df is not None and "Close" in idx_df.columns:
+    if idx_df is not None and "Close" in idx_df.columns and len(idx_df) > 0:
         idx_df = idx_df.sort_values("Date")
         idx_df["SMA50"] = idx_df["Close"].rolling(50, min_periods=25).mean()
         cur_close = idx_df["Close"].iloc[-1]
@@ -560,9 +560,21 @@ def main():
 
     # ---- Scoring ----
     def liquidity_score(row):
-        tt = min(1.0, (row["TurnoverCr_med20"] or 0)/20.0)
-        dd = 0.5 if pd.isna(row.get("DelivValCr_med20", np.nan)) else min(1.0, (row["DelivValCr_med20"] or 0)/8.0)
-        return max(0.0, min(1.0, 0.5*tt + 0.5*dd))
+        # Turnover component
+        t = row.get("TurnoverCr_med20", 0.0)
+        if not np.isfinite(t) or t < 0:
+            t = 0.0
+        tt = min(1.0, t / 20.0)
+
+        # Delivery component
+        d_raw = row.get("DelivValCr_med20", np.nan)
+        if pd.isna(d_raw) or (not np.isfinite(d_raw)) or d_raw < 0:
+            dd = 0.5  # neutral if we don't know
+        else:
+            dd = min(1.0, d_raw / 8.0)
+
+        score = 0.5 * tt + 0.5 * dd
+        return max(0.0, min(1.0, score))
 
     elig = fam_ok.copy()
     elig["PowerSignal"] = np.where((elig["PocketPivot10"]==1) | (elig["Breakout"]), 1.0,
@@ -623,7 +635,14 @@ def main():
 
         # ---- Plan B: Reclaim (power + structure)
         B = (np.nan, np.nan, "")
-        if (r.get("UpVol3Ratio", np.nan) or 0) >= RECLAIM_UPVOL3_MIN and (r.get("CloseLoc", np.nan) or 0) >= RECLAIM_CLOSELOC_MIN:
+        uv3 = r.get("UpVol3Ratio", np.nan)
+        if not np.isfinite(uv3):
+            uv3 = 0.0
+        cl  = r.get("CloseLoc", np.nan)
+        if not np.isfinite(cl):
+            cl = 0.0
+
+        if uv3 >= RECLAIM_UPVOL3_MIN and cl >= RECLAIM_CLOSELOC_MIN:
             if np.isfinite(sma10) and np.isfinite(sma20):
                 e2 = (sma10 + 0.10*atr)
                 s2 = (sma20 - 0.50*atr)
@@ -654,8 +673,16 @@ def main():
 
         atr = r["ATR14"] if np.isfinite(r["ATR14"]) and r["ATR14"]>0 else np.nan
         prox = round(max(0.0, (entry - r["Close"]) / atr), 2) if np.isfinite(atr) else 9.99
-        power_ok = (r["PocketPivot10"]==1) or ((r["UpVol3Ratio"] or 0) >= base_upvol3_min)
-        loc_ok   = (r["CloseLoc"] or 0) >= CLOSE_LOC_MIN
+
+        uv3 = r.get("UpVol3Ratio", np.nan)
+        if not np.isfinite(uv3):
+            uv3 = 0.0
+        cl  = r.get("CloseLoc", np.nan)
+        if not np.isfinite(cl):
+            cl = 0.0
+
+        power_ok = (r["PocketPivot10"]==1) or (uv3 >= base_upvol3_min)
+        loc_ok   = cl >= CLOSE_LOC_MIN
         prox_ok  = prox <= base_prox_max
         coil_ok  = (r["SqueezeScore"] >= 0.60) if r["FAM_RS"] else True
 
