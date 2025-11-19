@@ -190,7 +190,14 @@ def attach_insider_flags(last: pd.DataFrame) -> pd.DataFrame:
     return last
 
 def _recent_presence_flag(path: Path, last: pd.DataFrame, flag_name: str, days: int = 40) -> pd.DataFrame:
-    last[flag_name] = 0
+    """
+    Set <flag_name> = 1 if the symbol appears at least once in the given
+    deals file in the last `days` days, else 0. Robust to schema drift.
+    """
+    # Default: no deals → 0
+    if flag_name not in last.columns:
+        last[flag_name] = 0
+
     if not path.exists():
         return last
 
@@ -202,6 +209,7 @@ def _recent_presence_flag(path: Path, last: pd.DataFrame, flag_name: str, days: 
     date_col = _pick_flex(deals.columns, ["date", "deal_date", "traded_date"])
 
     if not sym_col or not date_col:
+        # Unexpected schema; fail soft
         return last
 
     deals[date_col] = pd.to_datetime(deals[date_col], errors="coerce")
@@ -213,22 +221,27 @@ def _recent_presence_flag(path: Path, last: pd.DataFrame, flag_name: str, days: 
     if recent.empty:
         return last
 
+    # Compute simple “has deal” count per symbol
     has_deal = (
         recent.dropna(subset=[sym_col])
               .groupby(sym_col)[date_col]
               .size()
-              .rename(flag_name)
-              .clip(lower=1)
+              .rename("has_deal")
     )
 
-    last = last.merge(has_deal, left_on="Symbol", right_index=True, how="left")
-    last[flag_name] = (last[flag_name] > 0).astype(int).fillna(0)
+    # Merge using a temporary column to avoid _x/_y suffix mess
+    last = last.merge(has_deal.to_frame(), left_on="Symbol", right_index=True, how="left")
+    last["has_deal"] = last["has_deal"].fillna(0)
+    last[flag_name] = (last["has_deal"] > 0).astype(int)
+    last = last.drop(columns=["has_deal"])
+
     return last
 
 def attach_bulk_block_flags(last: pd.DataFrame) -> pd.DataFrame:
     last = _recent_presence_flag(Path("data/bulk_deals_latest.csv"),  last, "BULK_PLUS")
     last = _recent_presence_flag(Path("data/block_deals_latest.csv"), last, "BLOCK_PLUS")
     return last
+
 
 def attach_flow_and_penalty_features(last: pd.DataFrame) -> pd.DataFrame:
     """
