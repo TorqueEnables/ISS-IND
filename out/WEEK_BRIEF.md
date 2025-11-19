@@ -10,52 +10,12 @@
 - If breadth is weak, prioritize names with a strong Go reason or sector support.
 
 ## GO (ready / high conviction)
-**ARVIND** — score **100.00**, last close **356.95**
-  - Plan A: Entry **359.80**, Stop **343.75**, Mode **BREAKOUT**
-  - Plan B: Entry **334.63**, Stop **319.92**, Mode **RECLAIM**
-  - Plan C: Entry **—**, Stop **—**, Mode **nan**
-  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
-  - Proximity: 0.24 ATR
-  - Go reason: MARKET_OK
-
-**MARINE** — score **100.00**, last close **252.60**
-  - Plan A: Entry **255.93**, Stop **238.47**, Mode **BREAKOUT**
-  - Plan B: Entry **—**, Stop **—**, Mode **nan**
-  - Plan C: Entry **—**, Stop **—**, Mode **nan**
-  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
-  - Proximity: 0.26 ATR
-  - Go reason: MARKET_OK
-
-**CIGNITITEC** — score **82.00**, last close **1793.90**
-  - Plan A: Entry **1806.48**, Stop **1746.37**, Mode **BREAKOUT**
-  - Plan B: Entry **1743.02**, Stop **1697.10**, Mode **RECLAIM**
-  - Plan C: Entry **—**, Stop **—**, Mode **nan**
-  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W, COILED
-  - Proximity: 0.29 ATR
-  - Go reason: MARKET_OK
-
 **SONACOMS** — score **80.20**, last close **506.95**
   - Plan A: Entry **510.35**, Stop **492.62**, Mode **BREAKOUT**
   - Plan B: Entry **—**, Stop **—**, Mode **nan**
   - Plan C: Entry **—**, Stop **—**, Mode **nan**
   - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
   - Proximity: 0.26 ATR
-  - Go reason: MARKET_OK
-
-**SGFIN** — score **77.60**, last close **406.10**
-  - Plan A: Entry **412.02**, Stop **391.27**, Mode **BREAKOUT**
-  - Plan B: Entry **394.53**, Stop **387.21**, Mode **RECLAIM**
-  - Plan C: Entry **—**, Stop **—**, Mode **nan**
-  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W, BULK+
-  - Proximity: 0.44 ATR
-  - Go reason: MARKET_OK
-
-**STYLAMIND** — score **77.00**, last close **2051.20**
-  - Plan A: Entry **2073.72**, Stop **1968.17**, Mode **BREAKOUT**
-  - Plan B: Entry **—**, Stop **—**, Mode **nan**
-  - Plan C: Entry **2062.40**, Stop **1994.00**, Mode **INSIDE_DAY**
-  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W, COILED
-  - Proximity: 0.30 ATR
   - Go reason: MARKET_OK
 
 **MCX** — score **69.10**, last close **9799.00**
@@ -74,7 +34,15 @@
   - Plan C: Entry **—**, Stop **—**, Mode **nan**
   - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
   - Proximity: 0.31 ATR
-  - Go reason: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
+  - Go reason: Not coiled; LQ<10cr (6.2); No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
+
+**ARVIND** — score **100.00**, last close **356.95**
+  - Plan A: Entry **359.80**, Stop **343.75**, Mode **BREAKOUT**
+  - Plan B: Entry **334.63**, Stop **319.92**, Mode **RECLAIM**
+  - Plan C: Entry **—**, Stop **—**, Mode **nan**
+  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
+  - Proximity: 0.24 ATR
+  - Go reason: LQ<10cr (9.9); No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
 
 **AUBANK** — score **100.00**, last close **925.65**
   - Plan A: Entry **930.85**, Stop **904.78**, Mode **BREAKOUT**
@@ -82,7 +50,7 @@
   - Plan C: Entry **928.00**, Stop **910.80**, Mode **INSIDE_DAY**
   - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W, BLOCK+
   - Proximity: 0.27 ATR
-  - Go reason: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
+  - Go reason: Not coiled; RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
 
 **AVANTIFEED** — score **100.00**, last close **841.65**
   - Plan A: Entry **861.12**, Stop **811.40**, Mode **BREAKOUT**
@@ -98,7 +66,7 @@
   - Plan C: Entry **—**, Stop **—**, Mode **nan**
   - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
   - Proximity: 0.20 ATR
-  - Go reason: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
+  - Go reason: Not coiled; RR_HI55<0.8 (0.18); No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
 
 **BHEL** — score **100.00**, last close **289.20**
   - Plan A: Entry **293.66**, Stop **279.97**, Mode **BREAKOUT**
@@ -154,7 +122,7 @@
   - Plan C: Entry **—**, Stop **—**, Mode **nan**
   - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
   - Proximity: 0.70 ATR
-  - Go reason: Weak close; Far (0.70 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
+  - Go reason: Weak close; Far (0.70 ATR); Not coiled; RR_HI55<0.8 (0.10); No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
 
 **GOKEX** — score **100.00**, last close **938.05**
   - Plan A: Entry **949.54**, Stop **903.29**, Mode **BREAKOUT**
@@ -168,7 +136,7 @@
   - Plan A: Entry **500.24**, Stop **474.29**, Mode **BREAKOUT**
   - Plan B: Entry **457.24**, Stop **426.10**, Mode **RECLAIM**
   - Plan C: Entry **—**, Stop **—**, Mode **nan**
-  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W, BULK+, BLOCK+
+  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W, BULK+
   - Proximity: 0.32 ATR
   - Go reason: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
 
@@ -179,14 +147,6 @@
   - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
   - Proximity: 0.24 ATR
   - Go reason: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
-
-**GSLSU** — score **100.00**, last close **131.90**
-  - Plan A: Entry **141.04**, Stop **121.84**, Mode **BREAKOUT**
-  - Plan B: Entry **—**, Stop **—**, Mode **nan**
-  - Plan C: Entry **—**, Stop **—**, Mode **nan**
-  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W, BULK+
-  - Proximity: 1.00 ATR
-  - Go reason: Weak close; Far (1.00 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.34, z-0.00)
 
 
 ### Plan definitions
