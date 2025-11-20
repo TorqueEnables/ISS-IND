@@ -78,8 +78,8 @@ def pick(cands, cols):
 
 def _pick_flex(cols, names):
     """
-    Case-insensitive fuzzy column chooser for external CSVs (PIT / Bulk / Block),
-    tolerant to NSE schema drift.
+    Case-insensitive fuzzy column chooser for external CSVs (PIT / Bulk / Block / Sector),
+    tolerant to schema drift.
     """
     cols_list = list(cols)
     lower = {c.lower(): c for c in cols_list}
@@ -487,43 +487,57 @@ def main():
     if not np.isfinite(disp4w): disp4w = 0.0
 
     # ---- Sector mapping (optional) ----
+    secmap = None
     sector_path = Path("ref/symbol_sector.csv")
     if sector_path.exists():
-        secmap = pd.read_csv(sector_path)
-        if "Symbol" in secmap.columns and "Sector" in secmap.columns:
-            secmap["Sector"] = secmap["Sector"].fillna("OTHER").astype(str)
-        else:
-            secmap = None
-    else:
-        secmap = None
+        raw = pd.read_csv(sector_path)
+        if not raw.empty:
+            sym_col = _pick_flex(raw.columns, ["Symbol", "SYMBOL", "symbol", "Scrip", "Security"])
+            sec_col = _pick_flex(raw.columns, ["Sector", "SECTOR", "sector", "Industry", "INDUSTRY"])
+            if sym_col and sec_col:
+                secmap = raw[[sym_col, sec_col]].copy()
+                secmap.rename(columns={sym_col: "Symbol", sec_col: "Sector"}, inplace=True)
+                secmap["Symbol"] = secmap["Symbol"].astype(str).str.strip().str.upper()
+                secmap["Sector"] = secmap["Sector"].fillna("OTHER").astype(str)
 
     if secmap is not None:
-        last = last.merge(secmap, on="Symbol", how="left")
+        # Normalize symbols and attach sector to df
+        df["SymKey"] = df["Symbol"].astype(str).str.strip().str.upper()
+        secmap2 = secmap.rename(columns={"Symbol": "SymKey"})
+        df = df.merge(secmap2, on="SymKey", how="left")
+        df.drop(columns=["SymKey"], inplace=True)
+        df["Sector"] = df["Sector"].fillna("OTHER")
+
+        # Bring Sector into last snapshot
+        last = last.merge(
+            df[df["Date"] == last_day][["Symbol", "Sector"]].drop_duplicates(),
+            on="Symbol",
+            how="left",
+        )
         last["Sector"] = last["Sector"].fillna("OTHER")
-        # sector breadth: % above 20DMA within sector
-        tmp = df[df["Date"]==last_day][["Symbol","Close"]].merge(
-            df[df["Date"]==last_day][["Symbol","SMA20"]], on="Symbol", how="left"
-        ).merge(secmap, on="Symbol", how="left").fillna({"Sector":"OTHER"})
+
+        # Sector breadth: % above 20DMA within each sector
+        tmp = df[df["Date"] == last_day][["Sector", "Close", "SMA20"]].copy()
         tmp["ABV20"] = tmp["Close"] > tmp["SMA20"]
         sec_breadth = tmp.groupby("Sector")["ABV20"].mean().to_dict()
         last["SECTOR_BREADTH20"] = last["Sector"].map(sec_breadth).fillna(0.0)
 
-        # sector RS & 10D returns
-        sec_slice = df[df["Date"]==last_day].merge(secmap, on="Symbol", how="left").fillna({"Sector":"OTHER"})
+        # Sector RS & 10D returns
+        sec_slice = df[df["Date"] == last_day][["Sector", "RET_20", "RET_10"]].copy()
         rs_by_sec = sec_slice.groupby("Sector")["RET_20"].median().rename("SEC_RET_20")
         ret10_by_sec = sec_slice.groupby("Sector")["RET_10"].median().rename("SEC_RET_10")
-
-        rs_sec = rs_by_sec.to_frame().join(ret10_by_sec, how="left").reset_index()
+        rs_sec = pd.concat([rs_by_sec, ret10_by_sec], axis=1).reset_index()
         rs_sec["SEC_RS_Z"] = zscore(rs_sec["SEC_RET_20"].fillna(0))
 
-        last = last.merge(rs_sec[["Sector","SEC_RS_Z","SEC_RET_10"]], on="Sector", how="left")
+        last = last.merge(rs_sec, on="Sector", how="left")
         last["SEC_RET_10"] = last["SEC_RET_10"].fillna(0.0)
-        # stock vs sector 10D edge
         last["RET10_EDGE_SEC"] = last["RET_10"].fillna(0.0) - last["SEC_RET_10"]
-        # momentum gates (optimized from friend’s strict 2% rule)
+
+        # Momentum gates (sector + stock vs sector)
         last["SECTOR_MOM_OK"] = (last["SEC_RS_Z"] > -0.5) | (last["RS_4W_Z"] > 1.5)
         last["STOCK_VS_SEC_OK"] = (last["RET10_EDGE_SEC"] >= -0.01)
     else:
+        # Fallback: no sector map, don't block trades
         last["Sector"] = "OTHER"
         last["SECTOR_BREADTH20"] = 0.0
         last["SEC_RS_Z"] = 0.0
@@ -537,13 +551,13 @@ def main():
     idx_df   = try_read_csv(Path("data/index/NIFTY.csv"))
     vix_pctl = np.nan
     nifty_below_50 = False
-    if vix_df is not None and "Close" in vix_df.columns and len(vix_df) > 0:
+    if vix_df is not None and "Close" in vix_df.columns:
         vix_df = vix_df.sort_values("Date")
         vix_past = vix_df.tail(180)["Close"]
         cur_vix  = vix_df["Close"].iloc[-1]
         if len(vix_past) >= 20:
             vix_pctl = float((vix_past <= cur_vix).mean())  # 0..1
-    if idx_df is not None and "Close" in idx_df.columns and len(idx_df) > 0:
+    if idx_df is not None and "Close" in idx_df.columns:
         idx_df = idx_df.sort_values("Date")
         idx_df["SMA50"] = idx_df["Close"].rolling(50, min_periods=25).mean()
         cur_close = idx_df["Close"].iloc[-1]
@@ -560,21 +574,9 @@ def main():
 
     # ---- Scoring ----
     def liquidity_score(row):
-        # Turnover component
-        t = row.get("TurnoverCr_med20", 0.0)
-        if not np.isfinite(t) or t < 0:
-            t = 0.0
-        tt = min(1.0, t / 20.0)
-
-        # Delivery component
-        d_raw = row.get("DelivValCr_med20", np.nan)
-        if pd.isna(d_raw) or (not np.isfinite(d_raw)) or d_raw < 0:
-            dd = 0.5  # neutral if we don't know
-        else:
-            dd = min(1.0, d_raw / 8.0)
-
-        score = 0.5 * tt + 0.5 * dd
-        return max(0.0, min(1.0, score))
+        tt = min(1.0, (row["TurnoverCr_med20"] or 0)/20.0)
+        dd = 0.5 if pd.isna(row.get("DelivValCr_med20", np.nan)) else min(1.0, (row["DelivValCr_med20"] or 0)/8.0)
+        return max(0.0, min(1.0, 0.5*tt + 0.5*dd))
 
     elig = fam_ok.copy()
     elig["PowerSignal"] = np.where((elig["PocketPivot10"]==1) | (elig["Breakout"]), 1.0,
@@ -635,14 +637,7 @@ def main():
 
         # ---- Plan B: Reclaim (power + structure)
         B = (np.nan, np.nan, "")
-        uv3 = r.get("UpVol3Ratio", np.nan)
-        if not np.isfinite(uv3):
-            uv3 = 0.0
-        cl  = r.get("CloseLoc", np.nan)
-        if not np.isfinite(cl):
-            cl = 0.0
-
-        if uv3 >= RECLAIM_UPVOL3_MIN and cl >= RECLAIM_CLOSELOC_MIN:
+        if (r.get("UpVol3Ratio", np.nan) or 0) >= RECLAIM_UPVOL3_MIN and (r.get("CloseLoc", np.nan) or 0) >= RECLAIM_CLOSELOC_MIN:
             if np.isfinite(sma10) and np.isfinite(sma20):
                 e2 = (sma10 + 0.10*atr)
                 s2 = (sma20 - 0.50*atr)
@@ -673,16 +668,8 @@ def main():
 
         atr = r["ATR14"] if np.isfinite(r["ATR14"]) and r["ATR14"]>0 else np.nan
         prox = round(max(0.0, (entry - r["Close"]) / atr), 2) if np.isfinite(atr) else 9.99
-
-        uv3 = r.get("UpVol3Ratio", np.nan)
-        if not np.isfinite(uv3):
-            uv3 = 0.0
-        cl  = r.get("CloseLoc", np.nan)
-        if not np.isfinite(cl):
-            cl = 0.0
-
-        power_ok = (r["PocketPivot10"]==1) or (uv3 >= base_upvol3_min)
-        loc_ok   = cl >= CLOSE_LOC_MIN
+        power_ok = (r["PocketPivot10"]==1) or ((r["UpVol3Ratio"] or 0) >= base_upvol3_min)
+        loc_ok   = (r["CloseLoc"] or 0) >= CLOSE_LOC_MIN
         prox_ok  = prox <= base_prox_max
         coil_ok  = (r["SqueezeScore"] >= 0.60) if r["FAM_RS"] else True
 
@@ -832,7 +819,7 @@ def main():
         f"- Market breadth (%% >20DMA): {breadth20*100:.1f}%",
         f"- Dispersion (stdev 4W returns): {disp4w*100:.1f}%",
         f"- Macro tighten active: {'YES' if high_vol_tighten else 'NO'}",
-        f"- Sector map: {'present' if 'secmap' in locals() and secmap is not None else 'absent'}",
+        f"- Sector map: {'present' if secmap is not None else 'absent'}",
     ]
     Path("out").mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(report) + "\n", encoding="utf-8")
