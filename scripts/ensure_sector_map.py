@@ -1,82 +1,161 @@
 #!/usr/bin/env python3
-import pandas as pd
-from pathlib import Path
+"""
+Ensure ref/symbol_sector.csv exists and is aligned with the current universe.
 
-BHAV_PATH   = Path("data/prices/bhav_latest.csv")
-BASE_PATH   = Path("ref/symbol_sector.csv")
-MANUAL_PATH = Path("ref/symbol_sector_manual.csv")
+- Reads latest bhav universe from data/prices/bhav_latest.csv
+- Uses manual overrides from ref/symbol_sector_manual.csv (if present)
+- Merges with existing ref/symbol_sector.csv (if present)
+- Writes consolidated ref/symbol_sector.csv used by score_week.py
+"""
+
+from pathlib import Path
+import sys
+import pandas as pd
+
+
+def _pick_flex(cols, names):
+    """
+    Case-insensitive fuzzy column chooser.
+    Tries exact (case-insensitive) first, then substring match.
+    """
+    cols_list = list(cols)
+    lower = {c.lower(): c for c in cols_list}
+    names_lower = [n.lower() for n in names]
+
+    # Exact case-insensitive match
+    for n in names_lower:
+        if n in lower:
+            return lower[n]
+
+    # Substring match
+    for c in cols_list:
+        cl = c.lower()
+        for n in names_lower:
+            if n in cl:
+                return c
+    return None
+
+
+def load_universe_symbols(bhav_path: Path):
+    if not bhav_path.exists():
+        print(f"[ensure_sector_map] {bhav_path} not found; skipping sector map build", file=sys.stderr)
+        return set()
+
+    bhav = pd.read_csv(bhav_path)
+    if bhav.empty:
+        print(f"[ensure_sector_map] {bhav_path} is empty; skipping sector map build", file=sys.stderr)
+        return set()
+
+    sym_col = _pick_flex(
+        bhav.columns,
+        [
+            "Symbol", "SYMBOL", "symbol",
+            "Scrip", "Security", "Security Name",
+            "SC_NAME", "SC_CODE", "TRADING_SYMBOL",
+        ],
+    )
+    if not sym_col:
+        print(
+            f"[ensure_sector_map] could not detect symbol column in {bhav_path}; "
+            f"columns={list(bhav.columns)}",
+            file=sys.stderr,
+        )
+        return set()
+
+    bhav["SymKey"] = bhav[sym_col].astype(str).str.strip().str.upper()
+    universe = set(bhav["SymKey"].dropna().unique())
+    print(f"[ensure_sector_map] detected {len(universe)} symbols in latest bhav universe")
+    return universe
+
+
+def load_existing_map(out_path: Path):
+    if not out_path.exists():
+        return {}
+
+    try:
+        cur = pd.read_csv(out_path)
+    except Exception as e:
+        print(f"[ensure_sector_map] failed to read existing {out_path}: {e}", file=sys.stderr)
+        return {}
+
+    sym_col = _pick_flex(cur.columns, ["Symbol", "SYMBOL", "symbol"])
+    sec_col = _pick_flex(cur.columns, ["Sector", "SECTOR", "sector", "Industry", "INDUSTRY"])
+    if not sym_col or not sec_col:
+        return {}
+
+    cur["SymKey"] = cur[sym_col].astype(str).str.strip().str.upper()
+    mapping = {}
+    for _, row in cur[["SymKey", sec_col]].dropna(subset=["SymKey"]).iterrows():
+        mapping[row["SymKey"]] = str(row[sec_col])
+    print(f"[ensure_sector_map] loaded {len(mapping)} existing symbol→sector entries")
+    return mapping
+
+
+def load_manual_map(manual_path: Path):
+    if not manual_path.exists():
+        print("[ensure_sector_map] no manual file ref/symbol_sector_manual.csv; skipping overrides")
+        return {}
+
+    try:
+        man = pd.read_csv(manual_path)
+    except Exception as e:
+        print(f"[ensure_sector_map] failed to read manual map {manual_path}: {e}", file=sys.stderr)
+        return {}
+
+    if man.empty:
+        print("[ensure_sector_map] manual file is empty; skipping overrides")
+        return {}
+
+    sym_col = _pick_flex(man.columns, ["Symbol", "SYMBOL", "symbol", "Scrip", "Security"])
+    sec_col = _pick_flex(man.columns, ["Sector", "SECTOR", "sector", "Industry", "INDUSTRY"])
+    if not sym_col or not sec_col:
+        print(
+            f"[ensure_sector_map] manual file missing Symbol/Sector-like columns; "
+            f"cols={list(man.columns)}",
+            file=sys.stderr,
+        )
+        return {}
+
+    man["SymKey"] = man[sym_col].astype(str).str.strip().str.upper()
+    mapping = {}
+    for _, row in man[["SymKey", sec_col]].dropna(subset=["SymKey"]).iterrows():
+        mapping[row["SymKey"]] = str(row[sec_col])
+    print(f"[ensure_sector_map] loaded {len(mapping)} manual symbol→sector entries")
+    return mapping
+
 
 def main():
-    if not BHAV_PATH.exists():
-        raise SystemExit(f"Missing {BHAV_PATH}")
+    bhav_path   = Path("data/prices/bhav_latest.csv")
+    manual_path = Path("ref/symbol_sector_manual.csv")
+    out_path    = Path("ref/symbol_sector.csv")
 
-    bhav = pd.read_csv(BHAV_PATH)
-    if "Symbol" not in bhav.columns:
-        raise SystemExit("bhav_latest.csv missing Symbol column")
+    universe = load_universe_symbols(bhav_path)
+    if not universe:
+        print("[ensure_sector_map] no universe symbols; nothing to do")
+        return
 
-    # 1) Current traded universe
-    universe = (
-        bhav["Symbol"]
-        .dropna()
-        .astype(str)
-        .unique()
-    )
-    universe_set = set(universe)
+    existing_map = load_existing_map(out_path)
+    manual_map   = load_manual_map(manual_path)
 
-    # 2) Manual map (your file) — source of truth
-    if not MANUAL_PATH.exists():
-        raise SystemExit(f"Manual sector file not found: {MANUAL_PATH}")
-
-    manual = pd.read_csv(MANUAL_PATH)
-
-    # Be tolerant to column naming
-    if "Sector" not in manual.columns:
-        if "Industry" in manual.columns:
-            manual = manual.rename(columns={"Industry": "Sector"})
+    rows = []
+    for sym in sorted(universe):
+        if sym in manual_map:
+            sector = manual_map[sym]
+        elif sym in existing_map:
+            sector = existing_map[sym]
         else:
-            raise SystemExit("symbol_sector_manual.csv must have Sector or Industry column")
+            sector = "OTHER"
+        rows.append((sym, sector))
 
-    if "Symbol" not in manual.columns:
-        raise SystemExit("symbol_sector_manual.csv must have Symbol column")
+    sec_df = pd.DataFrame(rows, columns=["Symbol", "Sector"])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sec_df.to_csv(out_path, index=False)
 
-    manual["Symbol"] = manual["Symbol"].astype(str)
-    manual["Sector"] = manual["Sector"].fillna("OTHER").astype(str)
-
-    # Keep only needed columns & dedupe
-    manual = manual[["Symbol", "Sector"]].drop_duplicates(subset=["Symbol"])
-
-    manual_syms = set(manual["Symbol"])
-    covered = len(universe_set & manual_syms)
-    missing = sorted(universe_set - manual_syms)
-
-    print(f"[ensure_sector_map] manual map has {len(manual_syms)} symbols")
-    print(f"[ensure_sector_map] coverage vs universe: {covered} / {len(universe_set)}")
-
-    # 3) Start from manual map
-    base = manual.copy()
-
-    # 4) Add missing universe symbols as OTHER
-    if missing:
-        extra = pd.DataFrame({
-            "Symbol": missing,
-            "Sector": ["OTHER"] * len(missing),
-        })
-        base = pd.concat([base, extra], ignore_index=True)
-
-    # 5) Final cleanup & write
-    base = (
-        base
-        .drop_duplicates(subset=["Symbol"])
-        .sort_values("Symbol")
-        .reset_index(drop=True)
+    print(
+        f"[ensure_sector_map] wrote {out_path} with {len(sec_df)} symbols "
+        f"(manual={len(manual_map)}, existing={len(existing_map)})"
     )
 
-    BASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    base.to_csv(BASE_PATH, index=False)
-
-    other_count = (base["Sector"] == "OTHER").sum()
-    print(f"[ensure_sector_map] wrote {BASE_PATH} with {len(base)} rows "
-          f"(OTHER={other_count})")
 
 if __name__ == "__main__":
     main()
