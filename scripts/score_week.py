@@ -766,36 +766,65 @@ def main():
         sector_mom_ok   = bool(r.get("SECTOR_MOM_OK", True))
         stock_vs_sec_ok = bool(r.get("STOCK_VS_SEC_OK", True))
 
-        go_reason     = None
-        market_ok     = (breadth20 >= BREADTH20_MIN) or (disp4w >= DISPERSION_4W_MIN)
-        sector_ok     = False
+                # ---- Three paths to GO ----
+        go_reason   = None
+        market_ok   = (breadth20 >= BREADTH20_MIN) or (disp4w >= DISPERSION_4W_MIN)
+        sector_ok   = False
         stock_only_ok = False
 
+        # Sector breadth + RS check
         if "SECTOR_BREADTH20" in r and "SEC_RS_Z" in r:
             sec_b = float(r.get("SECTOR_BREADTH20", 0.0))
             sec_z = float(r.get("SEC_RS_Z", 0.0))
             sector_ok = (
                 sec_b >= max(SECTOR_BREADTH_MIN, breadth20 + SECTOR_BREADTH_BONUS)
-            ) and (sec_z >= SECTOR_RS_Z_MIN)
+                and sec_z >= SECTOR_RS_Z_MIN
+            )
 
+        # Pure stock-based path (strong RS + good structure)
         stock_only_ok = (
-            (r["RS_4W_Z"] >= 1.0) and
-            power_ok and coil_ok and prox_ok and loc_ok
+            (r["RS_4W_Z"] >= 1.0)
+            and power_ok
+            and coil_ok
+            and prox_ok
+            and loc_ok
         )
 
         go_flag = False
-        if (market_ok and power_ok and prox_ok and loc_ok and coil_ok and
-            lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok):
+
+        # NOTE: sector_mom_ok / stock_vs_sec_ok are now *diagnostic*, not hard blockers.
+        # They still show up in GO_REASONS, but won't zero out GO on their own.
+
+        if (
+            market_ok
+            and power_ok
+            and prox_ok
+            and loc_ok
+            and coil_ok
+            and lq_strong
+            and trend_ok
+            and rr_ok
+        ):
             go_flag = True
             go_reason = "MARKET_OK"
-        elif (sector_ok and power_ok and prox_ok and loc_ok and coil_ok and
-              lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok):
+
+        elif (
+            sector_ok
+            and power_ok
+            and prox_ok
+            and loc_ok
+            and coil_ok
+            and lq_strong
+            and trend_ok
+            and rr_ok
+        ):
             go_flag = True
             go_reason = "SECTOR_OK"
-        elif (stock_only_ok and lq_strong and trend_ok and rr_ok and
-              sector_mom_ok and stock_vs_sec_ok):
+
+        elif stock_only_ok and lq_strong and trend_ok and rr_ok:
             go_flag = True
             go_reason = "STOCK_ONLY"
+
 
         # Diagnostics
         reasons = []
