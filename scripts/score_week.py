@@ -73,7 +73,8 @@ def parse_args():
 
 def pick(cands, cols):
     for c in cands:
-        if c in cols: return c
+        if c in cols:
+            return c
     return None
 
 def _pick_flex(cols, names):
@@ -84,10 +85,12 @@ def _pick_flex(cols, names):
     cols_list = list(cols)
     lower = {c.lower(): c for c in cols_list}
     names_lower = [n.lower() for n in names]
+
     # Exact case-insensitive match first
     for n in names_lower:
         if n in lower:
             return lower[n]
+
     # Fallback: substring search
     for c in cols_list:
         cl = c.lower()
@@ -98,28 +101,36 @@ def _pick_flex(cols, names):
 
 def to_num(s):
     if s.dtype == "O":
-        s = s.astype(str).str.replace(",", "", regex=False).str.replace(" ", "", regex=False)
+        s = (
+            s.astype(str)
+             .str.replace(",", "", regex=False)
+             .str.replace(" ", "", regex=False)
+        )
     return pd.to_numeric(s, errors="coerce")
 
 def zscore(x: pd.Series):
-    mu = x.mean(); sd = x.std(ddof=0)
-    if not np.isfinite(sd) or sd == 0: return (x*0).fillna(0)
+    mu = x.mean()
+    sd = x.std(ddof=0)
+    if not np.isfinite(sd) or sd == 0:
+        return (x * 0).fillna(0)
     return (x - mu) / sd
 
 def bb_width_20(s):
     ma = s.rolling(20, min_periods=20).mean()
     sd = s.rolling(20, min_periods=20).std(ddof=0)
-    return (ma.add(2*sd) - (ma.sub(2*sd))) / ma
+    return (ma.add(2 * sd) - (ma.sub(2 * sd))) / ma
 
 def percentile_of_last(series: pd.Series, lookback=120):
     s = series.dropna()
-    if s.empty: return np.nan
+    if s.empty:
+        return np.nan
     tail = s.tail(lookback)
     last = tail.iloc[-1]
     return float((tail <= last).sum()) / float(len(tail))
 
 def try_read_csv(path: Path, parse_date_col="Date"):
-    if not path.exists(): return None
+    if not path.exists():
+        return None
     try:
         df = pd.read_csv(path, parse_dates=[parse_date_col])
         return df
@@ -132,12 +143,12 @@ def tick_for_price(p: float) -> float:
 
 def hybrid_breakout_buffer(close: float, high: float, atr: float) -> float:
     """Volatility-smart + tick-aware buffer above High."""
-    t   = tick_for_price(close)
-    base = max(HYBRID_BUF_ATR*atr, HYBRID_BUF_PCT*close, 0.0)
+    t = tick_for_price(close)
+    base = max(HYBRID_BUF_ATR * atr, HYBRID_BUF_PCT * close, 0.0)
     if close < 100:
-        base = max(base, 10*t, 0.20*atr)
+        base = max(base, 10 * t, 0.20 * atr)
     elif close < 500:
-        base = max(base, 5*t)
+        base = max(base, 5 * t)
     # ≥500: ATR term dominates naturally
     return base
 
@@ -219,7 +230,6 @@ def _recent_presence_flag(path: Path, last: pd.DataFrame, flag_name: str, days: 
     if recent.empty:
         return last
 
-    # Compute simple “has deal” count per symbol
     has_deal = (
         recent.dropna(subset=[sym_col])
               .groupby(sym_col)[date_col]
@@ -227,7 +237,6 @@ def _recent_presence_flag(path: Path, last: pd.DataFrame, flag_name: str, days: 
               .rename("has_deal")
     )
 
-    # Merge using a temporary column to avoid _x/_y suffix mess
     last = last.merge(has_deal.to_frame(), left_on="Symbol", right_index=True, how="left")
     last["has_deal"] = last["has_deal"].fillna(0)
     last[flag_name] = (last["has_deal"] > 0).astype(int)
@@ -268,7 +277,6 @@ def attach_flow_and_penalty_features(last: pd.DataFrame) -> pd.DataFrame:
 
     # Penalties: trend + extension (approximate BB extension)
     last["BELOW_SMA20"] = (last["Close"] < last["SMA20"]).astype(int)
-    # Extended = very strong close in range AND high ATR%
     last["EXTENDED_BB"] = ((last["CloseLoc"] >= 0.9) & (last["ATR_PCT"] >= 0.08)).astype(int)
     return last
 
@@ -280,10 +288,12 @@ def main():
     report_path = Path("out/WEEK_GATE_REPORT.md")
 
     hist_path = Path(args.hist)
-    if not hist_path.exists(): raise SystemExit(f"Missing {hist_path}")
+    if not hist_path.exists():
+        raise SystemExit(f"Missing {hist_path}")
 
     df = pd.read_csv(hist_path, parse_dates=["Date"])
-    if df.empty: raise SystemExit("bhav_hist.csv is empty")
+    if df.empty:
+        raise SystemExit("bhav_hist.csv is empty")
 
     # Map columns
     cols = df.columns
@@ -297,6 +307,7 @@ def main():
     vol   = pick(["Volume","TOTTRDQTY"], cols)
     turn  = pick(["Turnover","TOTTRDVAL"], cols)
     dqty  = pick(["DelivQty","DELIV_QTY","DELIVQTY","DeliverableQty"], cols)
+
     need = [sym, ser, open_, high, low, close, prev, vol, turn]
     if any(c is None for c in need):
         raise SystemExit(f"bhav_hist.csv missing required columns; got {cols.tolist()}")
@@ -315,14 +326,19 @@ def main():
     last_day = df["Date"].max()
 
     # Universe hygiene
-    snap = df[df["Date"]==last_day].copy()
+    snap = df[df["Date"] == last_day].copy()
+
     def is_equity_row(row):
-        if str(row["Series"]).upper() != "EQ": return False
-        if not np.isfinite(row["Close"]) or row["Close"] < args.min_close: return False
-        if ETF_REGEX.search(str(row["Symbol"])): return False
+        if str(row["Series"]).upper() != "EQ":
+            return False
+        if not np.isfinite(row["Close"]) or row["Close"] < args.min_close:
+            return False
+        if ETF_REGEX.search(str(row["Symbol"])):
+            return False
         return True
+
     snap["UNIVERSE_OK"] = snap.apply(is_equity_row, axis=1)
-    keep_syms = set(snap.loc[snap["UNIVERSE_OK"], "Symbol"])
+    keep_syms  = set(snap.loc[snap["UNIVERSE_OK"], "Symbol"])
     total_syms = snap["Symbol"].nunique()
     uni_syms   = len(keep_syms)
 
@@ -338,15 +354,20 @@ def main():
     guess_rupees_cr = df["Turnover"] / 1e7
     guess_lakhs_cr  = df["Turnover"] / 100.0
     mask = (df["Turnover"] > 0) & (df["TurnoverCr_est"] > 0)
+
     def med_abs_log_ratio(a, b):
         r = (a[mask] / b[mask]).replace([np.inf, -np.inf], np.nan).dropna()
-        if r.empty: return np.inf
+        if r.empty:
+            return np.inf
         return np.median(np.abs(np.log(r)))
+
     err_r = med_abs_log_ratio(guess_rupees_cr, df["TurnoverCr_est"])
     err_l = med_abs_log_ratio(guess_lakhs_cr,  df["TurnoverCr_est"])
     chosen = "lakhs→cr (/100)" if err_l < err_r else "rupees→cr (/1e7)"
+
     df["TurnoverCr_raw"] = guess_lakhs_cr if err_l < err_r else guess_rupees_cr
-    df.loc[~(df["TurnoverCr_raw"] > 0), "TurnoverCr_raw"] = df.loc[~(df["TurnoverCr_raw"] > 0), "TurnoverCr_est"]
+    bad = ~(df["TurnoverCr_raw"] > 0)
+    df.loc[bad, "TurnoverCr_raw"] = df.loc[bad, "TurnoverCr_est"]
 
     # Liquidity medians
     df["TurnoverCr_med20"] = g["TurnoverCr_raw"].transform(lambda s: s.rolling(20, min_periods=10).median())
@@ -357,49 +378,50 @@ def main():
         df["DelivValCr_med20"] = np.nan
 
     # Technicals & structure
-    df["SMA10"]  = g["Close"].transform(lambda s: s.rolling(10, min_periods=10).mean())
-    df["SMA20"]  = g["Close"].transform(lambda s: s.rolling(20, min_periods=10).mean())
-    df["SMA50"]  = g["Close"].transform(lambda s: s.rolling(50, min_periods=25).mean())
+    df["SMA10"]  = g["Close"].transform(lambda s: s.rolling(10,  min_periods=10).mean())
+    df["SMA20"]  = g["Close"].transform(lambda s: s.rolling(20,  min_periods=10).mean())
+    df["SMA50"]  = g["Close"].transform(lambda s: s.rolling(50,  min_periods=25).mean())
     df["SMA200"] = g["Close"].transform(lambda s: s.rolling(200, min_periods=100).mean())
 
     # ATR (vectorised)
-    pc = df.groupby("Symbol")["Close"].shift(1)
+    pc  = df.groupby("Symbol")["Close"].shift(1)
     tr1 = df["High"] - df["Low"]
     tr2 = (df["High"] - pc).abs()
     tr3 = (df["Low"]  - pc).abs()
     df["TR"] = np.maximum.reduce([tr1, tr2, tr3])
-    df["ATR14"] = df.groupby("Symbol")["TR"].transform(lambda s: s.rolling(14, min_periods=10).mean())
-    df["ATR_PCT"]= df["ATR14"] / df["Close"]
+    df["ATR14"]   = df.groupby("Symbol")["TR"].transform(lambda s: s.rolling(14, min_periods=10).mean())
+    df["ATR_PCT"] = df["ATR14"] / df["Close"]
 
     rng = (df["High"] - df["Low"]).replace(0, np.nan)
-    df["CloseLoc"] = ((df["Close"] - df["Low"]) / rng).clip(0,1)
+    df["CloseLoc"] = ((df["Close"] - df["Low"]) / rng).clip(0, 1)
 
     # BB width & percentile
     df["BBWidth20"] = g["Close"].transform(bb_width_20)
     pct_rows = []
     for symb, sub in df.groupby("Symbol"):
         pct_rows.append((symb, percentile_of_last(sub["BBWidth20"], 120)))
-    pct_df = pd.DataFrame(pct_rows, columns=["Symbol","BBWidth_pctile_20"])
+    pct_df = pd.DataFrame(pct_rows, columns=["Symbol", "BBWidth_pctile_20"])
 
     # RS
     df["RET_20"] = g["Close"].transform(lambda s: s.pct_change(20))
     df["RET_65"] = g["Close"].transform(lambda s: s.pct_change(65))
     df["RET_10"] = g["Close"].transform(lambda s: s.pct_change(10))
-    last_rs = df[df["Date"]==last_day][["Symbol","RET_20","RET_65","RET_10"]].copy()
+    last_rs = df[df["Date"] == last_day][["Symbol","RET_20","RET_65","RET_10"]].copy()
     last_rs["RS_4W_Z"]  = zscore(last_rs["RET_20"].fillna(0))
     last_rs["RS_13W_Z"] = zscore(last_rs["RET_65"].fillna(0))
 
     # Volume signals (vectorised)
     df["UpBar"]   = df["Close"] > df["PrevClose"]
     df["DownBar"] = df["Close"] < df["PrevClose"]
-    upv   = (df["UpBar"].astype(int)   * df["Volume"])
-    downv = (df["DownBar"].astype(int) * df["Volume"])
+    upv   = df["UpBar"].astype(int)   * df["Volume"]
+    downv = df["DownBar"].astype(int) * df["Volume"]
+
     df["UpVol10"]   = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(10, min_periods=10).sum())
     df["DownVol10"] = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(10, min_periods=10).sum())
-    df["UpVol3"]    = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
-    df["DownVol3"]  = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3 ).sum())
+    df["UpVol3"]    = upv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3).sum())
+    df["DownVol3"]  = downv.groupby(df["Symbol"]).transform(lambda s: s.rolling(3,  min_periods=3).sum())
 
-    # Snapshot (last day) ---------------------------------------------
+    # Snapshot (last day)
     base_cols = [
         "Symbol","Series","Open","High","Low","Close","PrevClose",
         "SMA10","SMA20","SMA50","SMA200","ATR14","ATR_PCT",
@@ -409,19 +431,21 @@ def main():
     opt_cols = []
     if "DelivValCr" in df.columns:
         opt_cols.append("DelivValCr")
-    last = df[df["Date"]==last_day][base_cols + opt_cols].copy()
+
+    last = df[df["Date"] == last_day][base_cols + opt_cols].copy()
     if "DelivValCr" not in last.columns:
         last["DelivValCr"] = np.nan
+
     last = last.merge(pct_df, on="Symbol", how="left")
     last = last.merge(last_rs[["Symbol","RS_4W_Z","RS_13W_Z","RET_10"]], on="Symbol", how="left")
 
-    # ---- Derived fields needed later (define BEFORE PocketPivot10) ----
+    # Derived fields (before PocketPivot10)
     last["UpVolDom10"]  = (last["UpVol10"] > last["DownVol10"]).fillna(False)
     last["UpVol3Ratio"] = (last["UpVol3"] / last["DownVol3"]).replace([np.inf, -np.inf], np.nan)
-    last["SqueezeScore"] = (1.0 - last["BBWidth_pctile_20"].clip(0,1))
+    last["SqueezeScore"] = (1.0 - last["BBWidth_pctile_20"].clip(0, 1))
     last["MA_Aligned"]   = ((last["SMA20"] > last["SMA50"]) & (last["SMA50"] > last["SMA200"]))
 
-    # ---- Inside-day detection on last bar (bring PrevHigh/PrevLow once) ----
+    # Inside-day detection
     prev_hl = df[df["Date"] == last_day][["Symbol", "PrevHigh", "PrevLow"]].copy()
     last = last.merge(prev_hl, on="Symbol", how="left")
     last["InsideDay"]  = (last["High"] < last["PrevHigh"]) & (last["Low"] > last["PrevLow"])
@@ -431,40 +455,48 @@ def main():
 
     # Near 52w proxy + breakout
     gmax = g["Close"].transform(lambda s: s.rolling(252, min_periods=60).max())
-    mx   = df[df["Date"]==last_day][["Symbol","Close"]].copy()
-    mx["MaxClose252"] = gmax[df["Date"]==last_day].values
+    mx   = df[df["Date"] == last_day][["Symbol","Close"]].copy()
+    mx["MaxClose252"] = gmax[df["Date"] == last_day].values
     mx["Near52w"]     = (mx["Close"] >= 0.97 * mx["MaxClose252"])
     last = last.merge(mx[["Symbol","Near52w","MaxClose252"]], on="Symbol", how="left")
 
     # Breakout: 40D high
     roll_hi_40 = g["High"].transform(lambda s: s.rolling(40, min_periods=25).max())
-    brk = df[df["Date"]==last_day][["Symbol","Close","High"]].copy()
-    brk["Hi40"]     = roll_hi_40[df["Date"]==last_day].values
+    brk = df[df["Date"] == last_day][["Symbol","Close","High"]].copy()
+    brk["Hi40"]     = roll_hi_40[df["Date"] == last_day].values
     brk["Breakout"] = (brk["Close"] >= 1.01 * brk["Hi40"])
     last = last.merge(brk[["Symbol","Breakout","Hi40"]], on="Symbol", how="left")
 
     # 55D high for R:R sanity
     roll_hi_55 = g["High"].transform(lambda s: s.rolling(55, min_periods=25).max())
-    hi55_df = df[df["Date"]==last_day][["Symbol"]].copy()
-    hi55_df["Hi55"] = roll_hi_55[df["Date"]==last_day].values
+    hi55_df = df[df["Date"] == last_day][["Symbol"]].copy()
+    hi55_df["Hi55"] = roll_hi_55[df["Date"] == last_day].values
     last = last.merge(hi55_df, on="Symbol", how="left")
 
     # Families
     last["PocketPivot10"] = (
-        (df[df["Date"]==last_day]["UpBar"].values.astype(bool)) &
-        last["UpVolDom10"] & (last["Close"] > last["SMA10"])
+        (df[df["Date"] == last_day]["UpBar"].values.astype(bool)) &
+        last["UpVolDom10"] &
+        (last["Close"] > last["SMA10"])
     ).astype(int)
+
     last["FAM_RS"] = (
         (last["RS_4W_Z"] >= 0.5) &
         (last["RS_13W_Z"] >= 0.0) &
         (last["Near52w"]) &
-        ((last["SqueezeScore"] >= SQUEEZE_MIN_RS) | (last["PocketPivot10"]==1))
+        ((last["SqueezeScore"] >= SQUEEZE_MIN_RS) | (last["PocketPivot10"] == 1))
     )
-    last["FAM_PULL"] = ((last["MA_Aligned"]) & (last["Close"] <= last["SMA10"]) & (last["Close"] >= last["SMA20"]))
-    last["FAM_BB"]   = (last["Breakout"] & (last["SqueezeScore"] >= 0.7))
-    last["ANY_FAM"]  = last["FAM_RS"] | last["FAM_PULL"] | last["FAM_BB"]
 
-    # ---- Flow & penalties on last snapshot ----
+    last["FAM_PULL"] = (
+        (last["MA_Aligned"]) &
+        (last["Close"] <= last["SMA10"]) &
+        (last["Close"] >= last["SMA20"])
+    )
+
+    last["FAM_BB"]  = (last["Breakout"] & (last["SqueezeScore"] >= 0.7))
+    last["ANY_FAM"] = last["FAM_RS"] | last["FAM_PULL"] | last["FAM_BB"]
+
+    # Flow & penalties
     last = last.merge(snap[["Symbol","UNIVERSE_OK"]], on="Symbol", how="left")
     last = attach_flow_and_penalty_features(last)
 
@@ -474,19 +506,22 @@ def main():
     last["LQ_OK"]       = last["LQ_TURN_OK"] & last["LQ_DELIV_OK"]
     last["ATR_OK"]      = (last["ATR_PCT"] >= args.atr_min) & (last["ATR_PCT"] <= args.atr_max)
 
-    # ---- Market breadth & dispersion ----
-    snap_ma = df[df["Date"]==last_day][["Symbol","Close"]].merge(
-        df[df["Date"]==last_day][["Symbol","SMA20"]], on="Symbol", how="left"
+    # Market breadth & dispersion
+    snap_ma = df[df["Date"] == last_day][["Symbol","Close"]].merge(
+        df[df["Date"] == last_day][["Symbol","SMA20"]], on="Symbol", how="left"
     ).merge(snap[["Symbol","UNIVERSE_OK"]], on="Symbol", how="left")
-    uni_mask = snap_ma["UNIVERSE_OK"] == True
-    breadth20 = float((snap_ma.loc[uni_mask, "Close"] > snap_ma.loc[uni_mask, "SMA20"]).mean())
-    if not np.isfinite(breadth20): breadth20 = 0.0
-    # dispersion: stdev of 4W returns among universe
-    tmp_ret = df[df["Date"]==last_day].merge(snap[["Symbol","UNIVERSE_OK"]], on="Symbol")
-    disp4w = float(tmp_ret.loc[tmp_ret["UNIVERSE_OK"] == True, "RET_20"].std(ddof=0))
-    if not np.isfinite(disp4w): disp4w = 0.0
 
-    # ---- Sector mapping (optional) ----
+    uni_mask  = snap_ma["UNIVERSE_OK"] == True
+    breadth20 = float((snap_ma.loc[uni_mask, "Close"] > snap_ma.loc[uni_mask, "SMA20"]).mean())
+    if not np.isfinite(breadth20):
+        breadth20 = 0.0
+
+    tmp_ret = df[df["Date"] == last_day].merge(snap[["Symbol","UNIVERSE_OK"]], on="Symbol")
+    disp4w  = float(tmp_ret.loc[tmp_ret["UNIVERSE_OK"] == True, "RET_20"].std(ddof=0))
+    if not np.isfinite(disp4w):
+        disp4w = 0.0
+
+    # Sector mapping via ref/symbol_sector.csv (built from your manual file)
     secmap = None
     sector_path = Path("ref/symbol_sector.csv")
     if sector_path.exists():
@@ -497,18 +532,18 @@ def main():
             if sym_col and sec_col:
                 secmap = raw[[sym_col, sec_col]].copy()
                 secmap.rename(columns={sym_col: "Symbol", sec_col: "Sector"}, inplace=True)
-                secmap["Symbol"] = secmap["Symbol"].astype(str).str.strip().str.upper()
+                secmap["Symbol"] = secmap["Symbol"].astype(str).strip().str.upper()
                 secmap["Sector"] = secmap["Sector"].fillna("OTHER").astype(str)
 
     if secmap is not None:
-        # Normalize symbols and attach sector to df
+        # Attach sectors to full history
         df["SymKey"] = df["Symbol"].astype(str).str.strip().str.upper()
         secmap2 = secmap.rename(columns={"Symbol": "SymKey"})
         df = df.merge(secmap2, on="SymKey", how="left")
         df.drop(columns=["SymKey"], inplace=True)
         df["Sector"] = df["Sector"].fillna("OTHER")
 
-        # Bring Sector into last snapshot
+        # Sector into last snapshot
         last = last.merge(
             df[df["Date"] == last_day][["Symbol", "Sector"]].drop_duplicates(),
             on="Symbol",
@@ -517,15 +552,16 @@ def main():
         last["Sector"] = last["Sector"].fillna("OTHER")
 
         # Sector breadth: % above 20DMA within each sector
-        tmp = df[df["Date"] == last_day][["Sector", "Close", "SMA20"]].copy()
+        tmp = df[df["Date"] == last_day][["Sector","Close","SMA20"]].copy()
         tmp["ABV20"] = tmp["Close"] > tmp["SMA20"]
         sec_breadth = tmp.groupby("Sector")["ABV20"].mean().to_dict()
         last["SECTOR_BREADTH20"] = last["Sector"].map(sec_breadth).fillna(0.0)
 
         # Sector RS & 10D returns
-        sec_slice = df[df["Date"] == last_day][["Sector", "RET_20", "RET_10"]].copy()
-        rs_by_sec = sec_slice.groupby("Sector")["RET_20"].median().rename("SEC_RET_20")
-        ret10_by_sec = sec_slice.groupby("Sector")["RET_10"].median().rename("SEC_RET_10")
+        sec_slice = df[df["Date"] == last_day][["Sector","RET_20","RET_10"]].copy()
+        rs_by_sec   = sec_slice.groupby("Sector")["RET_20"].median().rename("SEC_RET_20")
+        ret10_by_sec= sec_slice.groupby("Sector")["RET_10"].median().rename("SEC_RET_10")
+
         rs_sec = pd.concat([rs_by_sec, ret10_by_sec], axis=1).reset_index()
         rs_sec["SEC_RS_Z"] = zscore(rs_sec["SEC_RET_20"].fillna(0))
 
@@ -533,30 +569,32 @@ def main():
         last["SEC_RET_10"] = last["SEC_RET_10"].fillna(0.0)
         last["RET10_EDGE_SEC"] = last["RET_10"].fillna(0.0) - last["SEC_RET_10"]
 
-        # Momentum gates (sector + stock vs sector)
-        last["SECTOR_MOM_OK"] = (last["SEC_RS_Z"] > -0.5) | (last["RS_4W_Z"] > 1.5)
+        # Momentum gates
+        last["SECTOR_MOM_OK"]   = (last["SEC_RS_Z"] > -0.5) | (last["RS_4W_Z"] > 1.5)
         last["STOCK_VS_SEC_OK"] = (last["RET10_EDGE_SEC"] >= -0.01)
     else:
-        # Fallback: no sector map, don't block trades
-        last["Sector"] = "OTHER"
-        last["SECTOR_BREADTH20"] = 0.0
-        last["SEC_RS_Z"] = 0.0
-        last["SEC_RET_10"] = 0.0
-        last["RET10_EDGE_SEC"] = 0.0
-        last["SECTOR_MOM_OK"] = True
+        # Fallback: no sector map
+        last["Sector"]          = "OTHER"
+        last["SECTOR_BREADTH20"]= 0.0
+        last["SEC_RS_Z"]        = 0.0
+        last["SEC_RET_10"]      = 0.0
+        last["RET10_EDGE_SEC"]  = 0.0
+        last["SECTOR_MOM_OK"]   = True
         last["STOCK_VS_SEC_OK"] = True
 
-    # ---- Macro regime (optional) ----
+    # Macro regime (optional)
     vix_df   = try_read_csv(Path("data/index/INDIAVIX.csv"))
     idx_df   = try_read_csv(Path("data/index/NIFTY.csv"))
     vix_pctl = np.nan
     nifty_below_50 = False
+
     if vix_df is not None and "Close" in vix_df.columns:
         vix_df = vix_df.sort_values("Date")
         vix_past = vix_df.tail(180)["Close"]
         cur_vix  = vix_df["Close"].iloc[-1]
         if len(vix_past) >= 20:
-            vix_pctl = float((vix_past <= cur_vix).mean())  # 0..1
+            vix_pctl = float((vix_past <= cur_vix).mean())
+
     if idx_df is not None and "Close" in idx_df.columns:
         idx_df = idx_df.sort_values("Date")
         idx_df["SMA50"] = idx_df["Close"].rolling(50, min_periods=25).mean()
@@ -566,48 +604,71 @@ def main():
 
     high_vol_tighten = (np.isfinite(vix_pctl) and vix_pctl >= VIX_TIGHTEN_PCTL and nifty_below_50)
 
-    # ---- Candidate pool after core gates ----
+    # Candidate pool
     uni_ok = last[last["UNIVERSE_OK"]]
     lq_ok  = uni_ok[uni_ok["LQ_OK"]]
     atr_ok = lq_ok[lq_ok["ATR_OK"]]
     fam_ok = atr_ok[atr_ok["ANY_FAM"]].copy()
 
-    # ---- Scoring ----
+    # Scoring
     def liquidity_score(row):
-        tt = min(1.0, (row["TurnoverCr_med20"] or 0)/20.0)
-        dd = 0.5 if pd.isna(row.get("DelivValCr_med20", np.nan)) else min(1.0, (row["DelivValCr_med20"] or 0)/8.0)
-        return max(0.0, min(1.0, 0.5*tt + 0.5*dd))
+        t_raw = row.get("TurnoverCr_med20", np.nan)
+        t_val = float(t_raw) if np.isfinite(t_raw) else 0.0
+        tt = min(1.0, t_val / 20.0)
+
+        d_raw = row.get("DelivValCr_med20", np.nan)
+        if pd.isna(d_raw):
+            dd = 0.5  # neutral if no delivery info
+        else:
+            d_val = float(d_raw)
+            dd = min(1.0, d_val / 8.0)
+
+        score = 0.5 * tt + 0.5 * dd
+        return max(0.0, min(1.0, score))
 
     elig = fam_ok.copy()
-    elig["PowerSignal"] = np.where((elig["PocketPivot10"]==1) | (elig["Breakout"]), 1.0,
-                              np.where(elig["UpVolDom10"], 0.5, 0.0))
-    rs4 = elig["RS_4W_Z"].clip(0,2).fillna(0)
-    rs13= elig["RS_13W_Z"].clip(-1,2).fillna(0)
-    poww= elig["PowerSignal"].fillna(0)
-    sqz = elig["SqueezeScore"].clip(0,1).fillna(0)
-    lqs = elig.apply(liquidity_score, axis=1)
-    stru= (elig["MA_Aligned"].astype(float) + elig["Near52w"].astype(float))/2.0
+    elig["PowerSignal"] = np.where(
+        (elig["PocketPivot10"] == 1) | (elig["Breakout"]),
+        1.0,
+        np.where(elig["UpVolDom10"], 0.5, 0.0)
+    )
 
-    # Ensure flow/penalty fields exist
+    rs4  = elig["RS_4W_Z"].clip(0, 2).fillna(0)
+    rs13 = elig["RS_13W_Z"].clip(-1, 2).fillna(0)
+    poww = elig["PowerSignal"].fillna(0)
+    sqz  = elig["SqueezeScore"].clip(0, 1).fillna(0)
+    lqs  = elig.apply(liquidity_score, axis=1)
+    stru = (elig["MA_Aligned"].astype(float) + elig["Near52w"].astype(float)) / 2.0
+
     for col in ["DELIV_Q4","INSIDER_PLUS","BULK_PLUS","BLOCK_PLUS","BELOW_SMA20","EXTENDED_BB"]:
         if col not in elig.columns:
             elig[col] = 0
 
     flow = (
-        10*elig["DELIV_Q4"].fillna(0) +
-        10*elig["INSIDER_PLUS"].fillna(0) +
-         8*elig["BULK_PLUS"].fillna(0) +
-         5*elig["BLOCK_PLUS"].fillna(0)
-    )
-    penalty = (
-        20*elig["BELOW_SMA20"].fillna(0) +
-        15*elig["EXTENDED_BB"].fillna(0)
+        10 * elig["DELIV_Q4"].fillna(0) +
+        10 * elig["INSIDER_PLUS"].fillna(0) +
+         8 * elig["BULK_PLUS"].fillna(0) +
+         5 * elig["BLOCK_PLUS"].fillna(0)
     )
 
-    elig["R_SCORE"] = (30*rs4 + 15*rs13 + 20*poww + 15*sqz + 10*lqs + 10*stru + flow - penalty).round(1)
+    penalty = (
+        20 * elig["BELOW_SMA20"].fillna(0) +
+        15 * elig["EXTENDED_BB"].fillna(0)
+    )
+
+    elig["R_SCORE"] = (
+        30 * rs4 +
+        15 * rs13 +
+        20 * poww +
+        15 * sqz +
+        10 * lqs +
+        10 * stru +
+        flow - penalty
+    ).round(1)
+
     elig["R_SCORE"] = elig["R_SCORE"].clip(lower=0, upper=100)
 
-    # ---- Plans & proximity ----
+    # Plans & proximity
     def build_plans(r):
         """
         Returns (Entry1, SL1, Mode1, Entry2, SL2, Mode2, Entry3, SL3, Mode3)
@@ -615,40 +676,46 @@ def main():
         - Plan B (reclaim): reclaim over SMA10 if power and close-location are decent
         - Plan C (inside-day): break of inside high with stop at inside low
         """
-        close = float(r["Close"]); high = float(r["High"]); low = float(r["Low"])
+        close = float(r["Close"])
+        high  = float(r["High"])
+        low   = float(r["Low"])
         atr   = float(r["ATR14"]) if np.isfinite(r["ATR14"]) else 0.0
         sma10 = float(r["SMA10"]) if np.isfinite(r["SMA10"]) else np.nan
         sma20 = float(r["SMA20"]) if np.isfinite(r["SMA20"]) else np.nan
 
-        # ---- Plan A: hybrid breakout/ready
+        # Plan A: breakout / ready
         if r["FAM_BB"] or r["FAM_RS"]:
             buf   = hybrid_breakout_buffer(close, high, atr)
             entry = high + buf
-            sl    = close - (1.10 if r["FAM_RS"] else 1.20)*atr
+            sl    = close - (1.10 if r["FAM_RS"] else 1.20) * atr
             mode  = "BREAKOUT"
             if r["FAM_RS"] and entry <= high + 1e-9:
                 mode = "READY"
         else:
-            # Pullback family → prefer reclaim over SMA10 with ATR pad
-            entry = max(close, (sma10 if np.isfinite(sma10) else close) + 0.10*atr)
-            sl    = min((sma20 if np.isfinite(sma20) else close) - 0.50*atr, low - 0.20*atr)
+            # Pullback family: reclaim
+            entry = max(close, (sma10 if np.isfinite(sma10) else close) + 0.10 * atr)
+            sl    = min(
+                (sma20 if np.isfinite(sma20) else close) - 0.50 * atr,
+                low - 0.20 * atr
+            )
             mode  = "RECLAIM"
-        A = (round(entry,2), round(sl,2), mode)
+        A = (round(entry, 2), round(sl, 2), mode)
 
-        # ---- Plan B: Reclaim (power + structure)
+        # Plan B: reclaim
         B = (np.nan, np.nan, "")
         if (r.get("UpVol3Ratio", np.nan) or 0) >= RECLAIM_UPVOL3_MIN and (r.get("CloseLoc", np.nan) or 0) >= RECLAIM_CLOSELOC_MIN:
             if np.isfinite(sma10) and np.isfinite(sma20):
-                e2 = (sma10 + 0.10*atr)
-                s2 = (sma20 - 0.50*atr)
-                B  = (round(e2,2), round(s2,2), "RECLAIM")
+                e2 = sma10 + 0.10 * atr
+                s2 = sma20 - 0.50 * atr
+                B  = (round(e2, 2), round(s2, 2), "RECLAIM")
 
-        # ---- Plan C: Inside-day (today compressed within yesterday)
+        # Plan C: inside-day
         C = (np.nan, np.nan, "")
         if bool(r.get("InsideDay", False)):
-            ih = float(r["InsideHigh"]); il = float(r["InsideLow"])
+            ih = float(r["InsideHigh"])
+            il = float(r["InsideLow"])
             if np.isfinite(ih) and np.isfinite(il):
-                C = (round(ih,2), round(il,2), "INSIDE_DAY")
+                C = (round(ih, 2), round(il, 2), "INSIDE_DAY")
 
         return A + B + C
 
@@ -666,71 +733,84 @@ def main():
          entry2, sl2, mode2,
          entry3, sl3, mode3) = build_plans(r)
 
-        atr = r["ATR14"] if np.isfinite(r["ATR14"]) and r["ATR14"]>0 else np.nan
+        atr  = r["ATR14"] if np.isfinite(r["ATR14"]) and r["ATR14"] > 0 else np.nan
         prox = round(max(0.0, (entry - r["Close"]) / atr), 2) if np.isfinite(atr) else 9.99
-        power_ok = (r["PocketPivot10"]==1) or ((r["UpVol3Ratio"] or 0) >= base_upvol3_min)
+
+        power_ok = (r["PocketPivot10"] == 1) or ((r["UpVol3Ratio"] or 0) >= base_upvol3_min)
         loc_ok   = (r["CloseLoc"] or 0) >= CLOSE_LOC_MIN
         prox_ok  = prox <= base_prox_max
         coil_ok  = (r["SqueezeScore"] >= 0.60) if r["FAM_RS"] else True
 
-        # ---- GO-level extra gates ----
-        # Liquidity: 20d median turnover ≥ LQ_GO_CR_MIN
-        t20 = r.get("TurnoverCr_med20", np.nan)
+        # GO-level extra gates
+        t20     = r.get("TurnoverCr_med20", np.nan)
         t20_val = float(t20) if np.isfinite(t20) else 0.0
         lq_strong = t20_val >= LQ_GO_CR_MIN
 
-        # Trend: prefer above 200DMA when SMA200 available
-        sma200 = r.get("SMA200", np.nan)
+        sma200   = r.get("SMA200", np.nan)
         trend_ok = True
         if np.isfinite(sma200):
             trend_ok = r["Close"] >= sma200
 
-        # R:R vs 55D high for pre-breakout patterns (where 55D high is still above today's high)
-        hi55 = r.get("Hi55", np.nan)
-        rr_stop = np.nan
-        rr_ok = True
+        hi55   = r.get("Hi55", np.nan)
+        rr_stop= np.nan
+        rr_ok  = True
         if np.isfinite(hi55):
             high_today = float(r["High"])
             if hi55 > high_today + 1e-6:
                 risk_stop = max(1e-6, entry - sl)
                 reward_hi = max(0.0, hi55 - entry)
-                rr_stop = reward_hi / risk_stop if risk_stop > 0 else np.nan
+                rr_stop   = reward_hi / risk_stop if risk_stop > 0 else np.nan
                 if np.isfinite(rr_stop):
                     rr_ok = rr_stop >= RR_MIN_HI55
 
-        # Sector momentum gates
         sector_mom_ok   = bool(r.get("SECTOR_MOM_OK", True))
         stock_vs_sec_ok = bool(r.get("STOCK_VS_SEC_OK", True))
 
-        # ---- Three paths to GO ----
-        go_reason = None
-        market_ok = (breadth20 >= BREADTH20_MIN) or (disp4w >= DISPERSION_4W_MIN)
-        sector_ok = False
+        go_reason     = None
+        market_ok     = (breadth20 >= BREADTH20_MIN) or (disp4w >= DISPERSION_4W_MIN)
+        sector_ok     = False
         stock_only_ok = False
 
         if "SECTOR_BREADTH20" in r and "SEC_RS_Z" in r:
             sec_b = float(r.get("SECTOR_BREADTH20", 0.0))
             sec_z = float(r.get("SEC_RS_Z", 0.0))
-            sector_ok = (sec_b >= max(SECTOR_BREADTH_MIN, breadth20 + SECTOR_BREADTH_BONUS)) and (sec_z >= SECTOR_RS_Z_MIN)
+            sector_ok = (
+                sec_b >= max(SECTOR_BREADTH_MIN, breadth20 + SECTOR_BREADTH_BONUS)
+            ) and (sec_z >= SECTOR_RS_Z_MIN)
 
-        stock_only_ok = (r["RS_4W_Z"] >= 1.0) and power_ok and coil_ok and prox_ok and loc_ok
+        stock_only_ok = (
+            (r["RS_4W_Z"] >= 1.0) and
+            power_ok and coil_ok and prox_ok and loc_ok
+        )
 
         go_flag = False
-        if market_ok and power_ok and prox_ok and loc_ok and coil_ok and lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok:
-            go_flag = True; go_reason = "MARKET_OK"
-        elif sector_ok and power_ok and prox_ok and loc_ok and coil_ok and lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok:
-            go_flag = True; go_reason = "SECTOR_OK"
-        elif stock_only_ok and lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok:
-            go_flag = True; go_reason = "STOCK_ONLY"
+        if (market_ok and power_ok and prox_ok and loc_ok and coil_ok and
+            lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok):
+            go_flag = True
+            go_reason = "MARKET_OK"
+        elif (sector_ok and power_ok and prox_ok and loc_ok and coil_ok and
+              lq_strong and trend_ok and rr_ok and sector_mom_ok and stock_vs_sec_ok):
+            go_flag = True
+            go_reason = "SECTOR_OK"
+        elif (stock_only_ok and lq_strong and trend_ok and rr_ok and
+              sector_mom_ok and stock_vs_sec_ok):
+            go_flag = True
+            go_reason = "STOCK_ONLY"
 
         # Diagnostics
         reasons = []
-        if not power_ok: reasons.append("Power weak")
-        if not loc_ok:   reasons.append("Weak close")
-        if not prox_ok:  reasons.append(f"Far ({prox:.2f} ATR)")
-        if not coil_ok:  reasons.append("Not coiled")
-        if not lq_strong: reasons.append(f"LQ<10cr ({t20_val:.1f})")
-        if not trend_ok:  reasons.append("Below 200-DMA")
+        if not power_ok:
+            reasons.append("Power weak")
+        if not loc_ok:
+            reasons.append("Weak close")
+        if not prox_ok:
+            reasons.append(f"Far ({prox:.2f} ATR)")
+        if not coil_ok:
+            reasons.append("Not coiled")
+        if not lq_strong:
+            reasons.append(f"LQ<10cr ({t20_val:.1f})")
+        if not trend_ok:
+            reasons.append("Below 200-DMA")
         if not rr_ok and np.isfinite(rr_stop):
             reasons.append(f"RR_HI55<{RR_MIN_HI55:.1f} ({rr_stop:.2f})")
         if "DELIV_Q4" in r and r.get("DELIV_Q4", 0) == 0:
@@ -747,37 +827,46 @@ def main():
             reasons.append(f"Underperforming sector (10D edge {r.get('RET10_EDGE_SEC',0):+.1%})")
 
         rows.append({
-            "Symbol": r["Symbol"], "Series": r["Series"], "Close": r["Close"],
+            "Symbol": r["Symbol"],
+            "Series": r["Series"],
+            "Close":  r["Close"],
             "R_SCORE": r["R_SCORE"],
-            "Entry": entry, "SL": sl, "EntryMode": mode, "TriggerDistATR": prox,
+            "Entry":  entry, "SL":  sl, "EntryMode": mode, "TriggerDistATR": prox,
             "Entry2": entry2, "SL2": sl2, "Mode2": mode2,
             "Entry3": entry3, "SL3": sl3, "Mode3": mode3,
-            "WHY": ",".join([t for t,flag in [
-                ("VCP_BREAKOUT", bool(r["FAM_BB"])),
-                ("RS_LEADER", bool(r["FAM_RS"])),
-                ("TREND_PULLBACK", bool(r["FAM_PULL"])),
-                ("POCKET_PIVOT", r["PocketPivot10"]==1),
-                ("UPVOL_DOM", bool(r["UpVolDom10"])),
-                ("MA_ALIGNED", bool(r["MA_Aligned"])),
-                ("NEAR_52W", bool(r["Near52w"])),
-                ("COILED", bool(r["SqueezeScore"]>=0.7)),
-                ("DELIV_Q4", bool(r.get("DELIV_Q4",0))),
-                ("INSIDER+", bool(r.get("INSIDER_PLUS",0))),
-                ("BULK+", bool(r.get("BULK_PLUS",0))),
-                ("BLOCK+", bool(r.get("BLOCK_PLUS",0))),
-                ("SUB_SMA20", bool(r.get("BELOW_SMA20",0))),
-                ("EXTENDED", bool(r.get("EXTENDED_BB",0))),
-            ] if flag]),
-            "RS_4W_Z": r["RS_4W_Z"], "RS_13W_Z": r["RS_13W_Z"], "SqueezeScore": r["SqueezeScore"],
+            "WHY": ",".join([
+                t for t, flag in [
+                    ("VCP_BREAKOUT", bool(r["FAM_BB"])),
+                    ("RS_LEADER", bool(r["FAM_RS"])),
+                    ("TREND_PULLBACK", bool(r["FAM_PULL"])),
+                    ("POCKET_PIVOT", r["PocketPivot10"] == 1),
+                    ("UPVOL_DOM", bool(r["UpVolDom10"])),
+                    ("MA_ALIGNED", bool(r["MA_Aligned"])),
+                    ("NEAR_52W", bool(r["Near52w"])),
+                    ("COILED", bool(r["SqueezeScore"] >= 0.7)),
+                    ("DELIV_Q4", bool(r.get("DELIV_Q4", 0))),
+                    ("INSIDER+", bool(r.get("INSIDER_PLUS", 0))),
+                    ("BULK+", bool(r.get("BULK_PLUS", 0))),
+                    ("BLOCK+", bool(r.get("BLOCK_PLUS", 0))),
+                    ("SUB_SMA20", bool(r.get("BELOW_SMA20", 0))),
+                    ("EXTENDED", bool(r.get("EXTENDED_BB", 0))),
+                ] if flag
+            ]),
+            "RS_4W_Z": r["RS_4W_Z"],
+            "RS_13W_Z": r["RS_13W_Z"],
+            "SqueezeScore": r["SqueezeScore"],
             "PocketPivot10": r["PocketPivot10"],
-            "TurnoverCr_med20": r["TurnoverCr_med20"], "DelivValCr_med20": r.get("DelivValCr_med20", np.nan),
-            "ATR_PCT": r["ATR_PCT"], "MA_Aligned": r["MA_Aligned"], "Near52w": r["Near52w"],
-            "DELIV_Q4": r.get("DELIV_Q4",0),
-            "INSIDER_PLUS": r.get("INSIDER_PLUS",0),
-            "BULK_PLUS": r.get("BULK_PLUS",0),
-            "BLOCK_PLUS": r.get("BLOCK_PLUS",0),
-            "BELOW_SMA20": r.get("BELOW_SMA20",0),
-            "EXTENDED_BB": r.get("EXTENDED_BB",0),
+            "TurnoverCr_med20": r["TurnoverCr_med20"],
+            "DelivValCr_med20": r.get("DelivValCr_med20", np.nan),
+            "ATR_PCT": r["ATR_PCT"],
+            "MA_Aligned": r["MA_Aligned"],
+            "Near52w": r["Near52w"],
+            "DELIV_Q4": r.get("DELIV_Q4", 0),
+            "INSIDER_PLUS": r.get("INSIDER_PLUS", 0),
+            "BULK_PLUS": r.get("BULK_PLUS", 0),
+            "BLOCK_PLUS": r.get("BLOCK_PLUS", 0),
+            "BELOW_SMA20": r.get("BELOW_SMA20", 0),
+            "EXTENDED_BB": r.get("EXTENDED_BB", 0),
             "LQ_STRONG": lq_strong,
             "TREND_OK": trend_ok,
             "RR_HI55": rr_stop,
@@ -788,22 +877,20 @@ def main():
             "STOCK_VS_SEC_OK": stock_vs_sec_ok,
             "GO": bool(go_flag),
             "GO_REASONS": go_reason if go_flag else ("; ".join(reasons) if reasons else "Needs confirm"),
-            "MKT_BREADTH20": round(breadth20,3),
-            "DISP_4W": round(disp4w,4),
+            "MKT_BREADTH20": round(breadth20, 3),
+            "DISP_4W":       round(disp4w, 4),
             "AsOf": pd.to_datetime(last_day).date(),
-            "Sector": r.get("Sector","OTHER"),
+            "Sector": r.get("Sector", "OTHER"),
             "SECTOR_BREADTH20": r.get("SECTOR_BREADTH20", 0.0),
-            "SEC_RS_Z": r.get("SEC_RS_Z", 0.0)
+            "SEC_RS_Z": r.get("SEC_RS_Z", 0.0),
         })
 
     out_df = pd.DataFrame(rows)
     out_df = out_df.sort_values(["GO","R_SCORE"], ascending=[False, False]).head(args.top)
     out_df.to_csv(out_path, index=False)
 
-    # Safe GO count when empty
     go_count = int(out_df["GO"].sum()) if "GO" in out_df.columns else 0
 
-    # Report (stage counts)
     lq_count  = int(len(lq_ok))
     atr_count = int(len(atr_ok))
     fam_count = int(len(fam_ok))
@@ -816,13 +903,14 @@ def main():
         f"- Liquidity OK (Turnover_20 ≥ {args.turnover_cr_20} cr; Deliverable_20 ≥ {args.deliv_cr_20} cr or NA): {lq_count}",
         f"- ATR% OK ({args.atr_min*100:.0f}%–{args.atr_max*100:.0f}%): {atr_count}",
         f"- Family match (RS/Pullback/Breakout): {fam_count}",
-        f"- Market breadth (%% >20DMA): {breadth20*100:.1f}%",
+        f"- Market breadth (% >20DMA): {breadth20*100:.1f}%",
         f"- Dispersion (stdev 4W returns): {disp4w*100:.1f}%",
         f"- Macro tighten active: {'YES' if high_vol_tighten else 'NO'}",
         f"- Sector map: {'present' if secmap is not None else 'absent'}",
     ]
     Path("out").mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(report) + "\n", encoding="utf-8")
+
     print(f"Wrote {out_path} with {len(out_df)} rows for {pd.to_datetime(last_day).date()} (GO={go_count})")
 
 if __name__ == "__main__":
