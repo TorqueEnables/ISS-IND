@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "when": "2025-11-20T16:12:36.693301Z",
+  "when": "2025-11-21T10:47:01.710263Z",
   "inputs": {
     "bhav_files_seen": [
       "bhav_27102025.csv",
@@ -120,14 +120,14 @@
     "latest_raw_file": "sec_bhavdata_full_20112025.csv",
     "latest_raw_date": "2025-11-20",
     "bulk_src": "Bulk-Deals-18-11-2024-to-18-11-2025.csv",
-    "block_src": "Block-Deals-11-11-2024-to-11-11-2025.csv"
+    "block_src": "Block-Deals-03-11-2024-to-03-11-2025.csv"
   },
   "outputs": {
     "bhav_hist_rows": 285286,
     "bhav_hist_last_date": "2025-11-20",
     "deliverables_rows": 3046,
     "bulk_rows": 18622,
-    "block_rows": 1940,
+    "block_rows": 1947,
     "hi52w_rows": 3294,
     "tech_latest_rows": 3046,
     "tech_latest_last_date": "2025-11-20"
