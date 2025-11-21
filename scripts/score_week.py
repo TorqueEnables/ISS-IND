@@ -532,7 +532,7 @@ def main():
             if sym_col and sec_col:
                 secmap = raw[[sym_col, sec_col]].copy()
                 secmap.rename(columns={sym_col: "Symbol", sec_col: "Sector"}, inplace=True)
-                secmap["Symbol"] = secmap["Symbol"].astype(str).strip().str.upper()
+                secmap["Symbol"] = secmap["Symbol"].astype(str).str.strip().str.upper()
                 secmap["Sector"] = secmap["Sector"].fillna("OTHER").astype(str)
 
     if secmap is not None:
