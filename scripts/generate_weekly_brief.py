@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-StakeLens Insider — Weekly Brief generator (pretty version).
+StakeLens Insider — Brief generator.
 
 Reads WEEK_PACK.csv and emits a human-friendly weekly brief:
 
@@ -88,28 +88,12 @@ def _plan_block(row):
             return f"  - **{label}**: Entry —, Stop —, Mode —"
         return f"  - **{label}**: Entry {_fmt_price(e)}, Stop {_fmt_price(s)}, Mode {m}"
 
-    def _plan_block(row):
-    """
-    Return markdown with indented bullets:
-
-      - **Plan A**: Entry X, Stop Y, Mode Z
-      - **Plan B**: ...
-      - **Plan C**: ...
-    """
-    lines = []
-
-    def one_plan(label, e_col, s_col, m_col):
-        e = row.get(e_col, np.nan)
-        s = row.get(s_col, np.nan)
-        m = row.get(m_col, "")
-        if pd.isna(e) or pd.isna(s) or not isinstance(m, str) or m.strip() == "":
-            return f"  - **{label}**: Entry —, Stop —, Mode —"
-        return f"  - **{label}**: Entry {_fmt_price(e)}, Stop {_fmt_price(s)}, Mode {m}"
-
+    # These match the columns written by score_week.py
     lines.append(one_plan("Plan A", "Entry",  "SL",  "EntryMode"))
     lines.append(one_plan("Plan B", "Entry2", "SL2", "Mode2"))
     lines.append(one_plan("Plan C", "Entry3", "SL3", "Mode3"))
     return "\n".join(lines)
+
 
 def _sector_context(row):
     """
