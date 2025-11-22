@@ -751,9 +751,9 @@ def main():
         if np.isfinite(sma200):
             trend_ok = r["Close"] >= sma200
 
-        hi55   = r.get("Hi55", np.nan)
-        rr_stop= np.nan
-        rr_ok  = True
+        hi55    = r.get("Hi55", np.nan)
+        rr_stop = np.nan
+        rr_ok   = True
         if np.isfinite(hi55):
             high_today = float(r["High"])
             if hi55 > high_today + 1e-6:
@@ -766,10 +766,66 @@ def main():
         sector_mom_ok   = bool(r.get("SECTOR_MOM_OK", True))
         stock_vs_sec_ok = bool(r.get("STOCK_VS_SEC_OK", True))
 
-                # ---- Three paths to GO ----
-        go_reason   = None
-        market_ok   = (breadth20 >= BREADTH20_MIN) or (disp4w >= DISPERSION_4W_MIN)
-        sector_ok   = False
+        # ---- Trend-Birth style "Tomorrow BUY" screener (daily) ----
+        close_val = float(r["Close"])
+        hi40      = r.get("Hi40", np.nan)
+        sma10     = r.get("SMA10", np.nan)
+        sma20     = r.get("SMA20", np.nan)
+
+        rs4w_raw = r["RS_4W_Z"]
+        rs4w     = float(rs4w_raw) if np.isfinite(rs4w_raw) else 0.0
+
+        sq_raw   = r["SqueezeScore"]
+        sq_score = float(sq_raw) if np.isfinite(sq_raw) else np.nan
+
+        dist_to_break_pct = np.nan
+        breakout_armed    = False
+        if np.isfinite(hi40) and hi40 > 0 and close_val > 0:
+            dist_to_break_pct = 100.0 * (hi40 - close_val) / close_val
+            breakout_armed = (
+                bool(r.get("MA_Aligned", False))
+                and dist_to_break_pct > 0.0
+                and dist_to_break_pct <= 2.0      # within ~2% of 40D high
+                and rs4w >= 0.0                   # non-negative RS
+            )
+
+        pullback_armed = False
+        if np.isfinite(sma10) and np.isfinite(sma20) and close_val > 0:
+            pullback_armed = (
+                bool(r.get("MA_Aligned", False))
+                and close_val >= sma20           # above "long" in this engine
+                and close_val <= sma10 * 1.01    # parked at/just below fast band
+                and rs4w >= -0.5                 # not an RS disaster
+            )
+
+        birth_armed = False
+        if np.isfinite(sq_score):
+            birth_armed = (
+                sq_score >= 0.60                 # reasonably coiled
+                and rs4w >= 0.0
+                and not breakout_armed
+                and not pullback_armed
+            )
+
+        tb_mode = ""
+        if breakout_armed:
+            tb_mode = "TB_BREAKOUT"
+        elif pullback_armed:
+            tb_mode = "TB_PULLBACK"
+        elif birth_armed:
+            tb_mode = "TB_BIRTH"
+
+        tb_tomorrow_buy = bool(tb_mode)
+
+        # Enforce basic quality: strong liquidity + trend above 200-DMA
+        if tb_tomorrow_buy and (not lq_strong or not trend_ok):
+            tb_tomorrow_buy = False
+            tb_mode = ""
+
+        # ---- Three paths to GO ----
+        go_reason     = None
+        market_ok     = (breadth20 >= BREADTH20_MIN) or (disp4w >= DISPERSION_4W_MIN)
+        sector_ok     = False
         stock_only_ok = False
 
         # Sector breadth + RS check
@@ -824,7 +880,6 @@ def main():
         elif stock_only_ok and lq_strong and trend_ok and rr_ok:
             go_flag = True
             go_reason = "STOCK_ONLY"
-
 
         # Diagnostics
         reasons = []
@@ -912,6 +967,11 @@ def main():
             "Sector": r.get("Sector", "OTHER"),
             "SECTOR_BREADTH20": r.get("SECTOR_BREADTH20", 0.0),
             "SEC_RS_Z": r.get("SEC_RS_Z", 0.0),
+
+            # Trend-Birth "Tomorrow BUY" metadata
+            "TB_TOMORROW_BUY": bool(tb_tomorrow_buy),
+            "TB_MODE": tb_mode,
+            "TB_DIST_TO_BREAK_PCT": round(dist_to_break_pct, 2) if np.isfinite(dist_to_break_pct) else np.nan,
         })
 
     out_df = pd.DataFrame(rows)
