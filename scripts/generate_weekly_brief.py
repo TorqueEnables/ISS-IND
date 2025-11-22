@@ -196,6 +196,47 @@ def build_how_to(df):
     lines.append("")
     return "\n".join(lines)
 
+def build_tv_buy_section(df):
+    """
+    Section: names where the Python engine thinks Plan A is close enough
+    and strong enough that tomorrow's bar could realistically trigger
+    your TradingView buy script.
+    """
+    lines = []
+    lines.append("Next-bar TV buy setup candidates")
+    lines.append("")
+
+    # If the pack is old / column missing, fail soft
+    if "TV_BUY_SETUP" not in df.columns:
+        lines.append("- TV_BUY_SETUP flag not available in this pack; rerun scoring with the updated score_week.py.")
+        lines.append("")
+        return "\n".join(lines)
+
+    tv = df[df["TV_BUY_SETUP"].astype(bool)].copy()
+    if tv.empty:
+        lines.append("- None this run. Focus on the GO list and Watchlist instead.")
+        lines.append("")
+        return "\n".join(lines)
+
+    tv = tv.sort_values("R_SCORE", ascending=False)
+
+    for _, r in tv.iterrows():
+        sym   = r["Symbol"]
+        score = _fmt_score(r.get("R_SCORE", np.nan))
+        close = _fmt_price(r.get("Close", np.nan))
+        prox  = r.get("TriggerDistATR", np.nan)
+        prox_txt = f"{prox:.2f} ATR above" if pd.notna(prox) else "NA"
+
+        lines.append(f"- **{sym}** — score {score}, last close {close}")
+        lines.append(f"  - Plan A trigger distance: {prox_txt}")
+        # Reuse the existing helpers
+        lines.append(_plan_block(r))
+        lines.append(_sector_context(r))
+        lines.append(_slippage_hint(r))
+        lines.append("")  # spacing between names
+
+    lines.append("")
+    return "\n".join(lines)
 
 def build_go_section(go_df):
     lines = []
