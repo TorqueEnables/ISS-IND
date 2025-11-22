@@ -974,7 +974,36 @@ def main():
             "TB_DIST_TO_BREAK_PCT": round(dist_to_break_pct, 2) if np.isfinite(dist_to_break_pct) else np.nan,
         })
 
-    out_df = pd.DataFrame(rows)
+        out_df = pd.DataFrame(rows)
+
+    # --- New: TV_BUY_SETUP flag for "likely next-bar TV buy" ---
+    # Make sure helper columns exist (defensive)
+    if "WHY" not in out_df.columns:
+        out_df["WHY"] = ""
+    if "PocketPivot10" not in out_df.columns:
+        out_df["PocketPivot10"] = 0
+
+    # Strong power signal: either a pocket pivot or clear upside volume dominance tag
+    out_df["PowerStrong"] = (
+        (out_df["PocketPivot10"].fillna(0) == 1) |
+        (out_df["WHY"].fillna("").str.contains("UPVOL_DOM"))
+    )
+
+    # Define when a setup is realistically capable of triggering on the next bar
+    tv_mask = (
+        out_df["TriggerDistATR"].notna() &
+        (out_df["TriggerDistATR"] >= 0.0) &
+        (out_df["TriggerDistATR"] <= 0.75) &  # <= 0.75 ATR above close
+        (out_df["EntryMode"].isin(["BREAKOUT", "READY", "RECLAIM", "INSIDE_DAY"])) &
+        (out_df["TurnoverCr_med20"].fillna(0.0) >= 5.0) &  # basic liquidity
+        (out_df["ATR_PCT"].between(0.02, 0.10)) &          # same ATR band you use
+        (out_df["RS_4W_Z"].fillna(0.0) >= 0.0) &           # avoid RS trash
+        (out_df["PowerStrong"])                            # non-dead power
+    )
+
+    out_df["TV_BUY_SETUP"] = tv_mask.astype(int)
+
+    # Existing behaviour: sort and keep top N
     out_df = out_df.sort_values(["GO","R_SCORE"], ascending=[False, False]).head(args.top)
     out_df.to_csv(out_path, index=False)
 
