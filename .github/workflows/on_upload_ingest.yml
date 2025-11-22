@@ -96,11 +96,16 @@ jobs:
       - name: Stage results
         run: |
           set -e
-          # Data & outputs
+          # Data & core outputs
           git add data/prices/bhav_hist.csv data/tech_latest.csv data/highlow_52w.csv 2>/dev/null || true
           git add data/prices/bhav_latest.csv 2>/dev/null || true
           git add data/*status.json 2>/dev/null || true
-          git add out 2>/dev/null || true
+
+          # Explicit tracked outputs
+          git add out/WEEK_PACK.csv out/WEEK_RUNSTAMP.txt 2>/dev/null || true
+
+          # Force-add the Weekly Brief even if some ignore/exclude rule exists
+          git add -f out/WEEK_BRIEF.md 2>/dev/null || true
 
           # Sector map: add folder if present (avoids pathspec errors)
           if [ -d ref ]; then
