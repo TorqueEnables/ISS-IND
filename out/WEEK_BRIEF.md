@@ -1,7 +1,7 @@
 StakeLens Insider — Weekly Brief (auto-updated)
-As of: 2025-11-20
-Market breadth (>20-DMA): 33.2%
-Dispersion (4W σ): 10.8%
+As of: 2025-11-21
+Market breadth (>20-DMA): 27.2%
+Dispersion (4W σ): 10.3%
 
 How to read this
 
@@ -16,93 +16,93 @@ GO (ready / high conviction)
 
 Watchlist (developing setups)
 
-- **AETHER** — score 100.00, last close 895.55
-  - Proximity: 0.34 ATR
-  - Note: Not coiled; LQ<10cr (6.2); No delivery edge; No fresh insider; Sector weak (b0.32, z-0.29)
-  - Sector: Chemicals — breadth 32% — RS z -0.29 — 10D vs sector +22.1%
-  - View: riding sector + stock momentum
-
-- **ARVIND** — score 100.00, last close 358.50
-  - Proximity: 0.27 ATR
-  - Note: Not coiled; No delivery edge; No fresh insider
-  - Sector: Textiles — breadth 64% — RS z +3.03 — 10D vs sector +8.3%
-  - View: riding sector + stock momentum
-
-- **ASHAPURMIN** — score 100.00, last close 742.55
-  - Proximity: 0.53 ATR
-  - Note: Far (0.53 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.31, z+0.05)
-  - Sector: Non-Energy Minerals — breadth 31% — RS z +0.05 — 10D vs sector +14.8%
-  - View: riding sector + stock momentum
-
-- **AUBANK** — score 100.00, last close 919.30
-  - Proximity: 0.67 ATR
-  - Note: Weak close; Far (0.67 ATR); RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.46, z+0.89)
-  - Sector: Financial Services — breadth 46% — RS z +0.89 — 10D vs sector +4.1%
-  - View: riding sector + stock momentum
-
-- **AVANTIFEED** — score 100.00, last close 848.00
+- **AETHER** — score 100.00, last close 919.35
   - Proximity: 0.50 ATR
-  - Note: Far (0.50 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.37, z+0.28)
-  - Sector: Fast Moving Consumer Goods — breadth 37% — RS z +0.28 — 10D vs sector +23.5%
+  - Note: Far (0.50 ATR); Not coiled; LQ<10cr (7.1); No delivery edge; No fresh insider; Sector weak (b0.21, z-0.21)
+  - Sector: Chemicals — breadth 21% — RS z -0.21 — 10D vs sector +25.8%
   - View: riding sector + stock momentum
 
-- **BLSE** — score 100.00, last close 219.87
-  - Proximity: 0.29 ATR
-  - Note: Not coiled; LQ<10cr (8.3); RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.24, z+0.09)
-  - Sector: Technology Services — breadth 24% — RS z +0.09 — 10D vs sector +13.4%
+- **APEX** — score 100.00, last close 331.75
+  - Proximity: 0.18 ATR
+  - Note: Not coiled; LQ<10cr (6.7); No delivery edge; No fresh insider; Sector weak (b0.27, z+0.32)
+  - Sector: Consumer Non-Durables — breadth 27% — RS z +0.32 — 10D vs sector +43.0%
   - View: riding sector + stock momentum
 
-- **CHENNPETRO** — score 100.00, last close 1076.35
-  - Proximity: 0.68 ATR
-  - Note: Weak close; Far (0.68 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.40, z+0.10)
-  - Sector: Oil Gas & Consumable Fuels — breadth 40% — RS z +0.10 — 10D vs sector +11.0%
+- **AVANTIFEED** — score 100.00, last close 861.20
+  - Proximity: 0.60 ATR
+  - Note: Far (0.60 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.35, z+0.55)
+  - Sector: Fast Moving Consumer Goods — breadth 35% — RS z +0.55 — 10D vs sector +20.9%
   - View: riding sector + stock momentum
 
-- **DYNAMATECH** — score 100.00, last close 9753.00
-  - Proximity: 0.33 ATR
-  - Note: Not coiled; RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.38, z+0.43)
-  - Sector: Capital Goods — breadth 38% — RS z +0.43 — 10D vs sector +17.8%
+- **CUPID** — score 100.00, last close 337.03
+  - Proximity: 0.24 ATR
+  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.27, z+0.32)
+  - Sector: Consumer Non-Durables — breadth 27% — RS z +0.32 — 10D vs sector +40.4%
   - View: riding sector + stock momentum
 
-- **GMRP&UI** — score 100.00, last close 132.19
-  - Proximity: 0.97 ATR
-  - Note: Weak close; Far (0.97 ATR); Not coiled; RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.16, z-0.40)
-  - Sector: Power — breadth 16% — RS z -0.40 — 10D vs sector +12.0%
+- **DCBBANK** — score 100.00, last close 186.07
+  - Proximity: 0.43 ATR
+  - Note: Not coiled; RR_HI55<0.8 (0.01); No delivery edge; No fresh insider; Sector weak (b0.37, z+0.69)
+  - Sector: Financial Services — breadth 37% — RS z +0.69 — 10D vs sector +14.4%
   - View: riding sector + stock momentum
 
-- **GOKEX** — score 100.00, last close 949.35
-  - Proximity: 0.33 ATR
-  - Note: Not coiled; No delivery edge; No fresh insider
-  - Sector: Textiles — breadth 64% — RS z +3.03 — 10D vs sector +5.2%
+- **GOKEX** — score 100.00, last close 937.80
+  - Proximity: 0.54 ATR
+  - Note: Weak close; Far (0.54 ATR); RR_HI55<0.8 (0.02); No delivery edge; No fresh insider
+  - Sector: Textiles — breadth 57% — RS z +2.73 — 10D vs sector +9.1%
   - View: riding sector + stock momentum
 
-- **GRWRHITECH** — score 100.00, last close 4168.90
-  - Proximity: 0.75 ATR
-  - Note: Weak close; Far (0.75 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.38, z+0.43)
-  - Sector: Capital Goods — breadth 38% — RS z +0.43 — 10D vs sector +25.2%
+- **GRMOVER** — score 100.00, last close 487.20
+  - Proximity: 0.74 ATR
+  - Note: Weak close; Far (0.74 ATR); Not coiled; RR_HI55<0.8 (0.05); No delivery edge; No fresh insider; Sector weak (b0.22, z-0.18)
+  - Sector: Process Industries — breadth 22% — RS z -0.18 — 10D vs sector +13.3%
   - View: riding sector + stock momentum
 
-- **ICIL** — score 100.00, last close 323.65
+- **RPEL** — score 100.00, last close 1045.25
   - Proximity: 0.35 ATR
-  - Note: Not coiled; LQ<10cr (9.4); No delivery edge; No fresh insider
-  - Sector: Textiles — breadth 64% — RS z +3.03 — 10D vs sector +10.5%
+  - Note: Not coiled; LQ<10cr (8.3); RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.22, z-0.18)
+  - Sector: Process Industries — breadth 22% — RS z -0.18 — 10D vs sector +18.9%
   - View: riding sector + stock momentum
 
-- **INDIGOPNTS** — score 100.00, last close 1306.90
-  - Proximity: 0.64 ATR
-  - Note: Weak close; Far (0.64 ATR); Not coiled; LQ<10cr (9.1); RR_HI55<0.8 (0.02); No delivery edge; No fresh insider; Sector weak (b0.31, z+0.02)
-  - Sector: Consumer Durables — breadth 31% — RS z +0.02 — 10D vs sector +34.9%
+- **SANSERA** — score 100.00, last close 1606.40
+  - Proximity: 0.67 ATR
+  - Note: Weak close; Far (0.67 ATR); No delivery edge; No fresh insider; Sector weak (b0.46, z+0.48)
+  - Sector: Automobile and Auto Components — breadth 46% — RS z +0.48 — 10D vs sector +4.9%
   - View: riding sector + stock momentum
 
-- **INTERARCH** — score 100.00, last close 2594.60
-  - Proximity: 0.51 ATR
-  - Note: Weak close; Far (0.51 ATR); Not coiled; RR_HI55<0.8 (0.33); No delivery edge; No fresh insider; Sector weak (b0.38, z+0.41)
-  - Sector: OTHER — breadth 38% — RS z +0.41 — 10D vs sector +20.3%
+- **TVSSRICHAK** — score 100.00, last close 4702.10
+  - Proximity: 0.26 ATR
+  - Note: Not coiled; LQ<10cr (5.6); RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.27, z+0.11)
+  - Sector: Consumer Durables — breadth 27% — RS z +0.11 — 10D vs sector +18.0%
   - View: riding sector + stock momentum
 
-- **KIRLOSENG** — score 100.00, last close 1181.45
+- **GMRAIRPORT** — score 99.50, last close 104.05
+  - Proximity: 0.72 ATR
+  - Note: Weak close; Far (0.72 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.28, z-0.05)
+  - Sector: Services — breadth 28% — RS z -0.05 — 10D vs sector +12.6%
+  - View: riding sector + stock momentum
+
+- **NH** — score 97.90, last close 2043.20
   - Proximity: 0.44 ATR
-  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.38, z+0.43)
-  - Sector: Capital Goods — breadth 38% — RS z +0.43 — 10D vs sector +19.0%
+  - Note: Not coiled; RR_HI55<0.8 (0.10); No delivery edge; No fresh insider; Sector weak (b0.27, z+0.33)
+  - Sector: Healthcare — breadth 27% — RS z +0.33 — 10D vs sector +14.3%
+  - View: riding sector + stock momentum
+
+- **ASIANPAINT** — score 96.00, last close 2876.60
+  - Proximity: 0.44 ATR
+  - Note: Weak close; Not coiled; RR_HI55<0.8 (0.21); No delivery edge; No fresh insider; Sector weak (b0.27, z+0.11)
+  - Sector: Consumer Durables — breadth 27% — RS z +0.11 — 10D vs sector +13.7%
+  - View: riding sector + stock momentum
+
+- **GPPL** — score 94.40, last close 177.95
+  - Proximity: 0.66 ATR
+  - Note: Weak close; Far (0.66 ATR); Not coiled; RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.28, z-0.05)
+  - Sector: Services — breadth 28% — RS z -0.05 — 10D vs sector +6.0%
+  - View: riding sector + stock momentum
+
+- **SENORES** — score 93.30, last close 819.55
+  - Proximity: 0.55 ATR
+  - Note: Weak close; Far (0.55 ATR); RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.37, z+0.42)
+  - Sector: OTHER — breadth 37% — RS z +0.42 — 10D vs sector +2.7%
   - View: riding sector + stock momentum
 
