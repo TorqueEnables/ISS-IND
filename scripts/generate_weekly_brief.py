@@ -310,7 +310,6 @@ def build_watch_section(watch_df, limit):
     lines.append("")
     return "\n".join(lines)
 
-
 # ---------- Main ----------
 
 def main():
@@ -338,15 +337,18 @@ def main():
     else:
         df["GO"] = False
 
-        parts = []
+    go_df    = df[df["GO"]].sort_values("R_SCORE", ascending=False)
+    watch_df = df[~df["GO"]].copy()
+
+    # <-- THIS is the important part: define parts BEFORE using parts.append(...)
+    parts = []
     parts.append(build_header(df))
     parts.append(build_how_to(df))
-    parts.append(build_tv_buy_section(df))                 # NEW: next-bar candidates
+    parts.append(build_tv_buy_section(df))                 # NEW: next-bar TV buy section
     parts.append(build_go_section(go_df))
     parts.append(build_watch_section(watch_df, args.watch_limit))
 
     text = "\n".join(parts)
-
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(text, encoding="utf-8")
     print(f"Wrote {out_path} (GO={len(go_df)}, Watch={min(len(watch_df), args.watch_limit)})")
