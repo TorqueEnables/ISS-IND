@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "when": "2025-11-22T09:40:31.488034Z",
+  "when": "2025-12-07T18:29:06.197461Z",
   "inputs": {
     "bhav_files_seen": [
       "bhav_27102025.csv",
@@ -21,6 +21,7 @@
       "sec_bhavdata_full_05082025.csv",
       "sec_bhavdata_full_05092025.csv",
       "sec_bhavdata_full_05102025.csv",
+      "sec_bhavdata_full_05122025.csv",
       "sec_bhavdata_full_06072025.csv",
       "sec_bhavdata_full_06082025.csv",
       "sec_bhavdata_full_06102025.csv",
@@ -118,20 +119,20 @@
       "sec_bhavdata_full_31082025.csv",
       "sec_bhavdata_full_31102025.csv"
     ],
-    "latest_raw_file": "sec_bhavdata_full_21112025.csv",
-    "latest_raw_date": "2025-11-21",
+    "latest_raw_file": "sec_bhavdata_full_05122025.csv",
+    "latest_raw_date": "2025-12-05",
     "bulk_src": "Bulk-Deals-22-11-2024-to-22-11-2025.csv",
     "block_src": "Block-Deals-22-11-2024-to-22-11-2025.csv"
   },
   "outputs": {
-    "bhav_hist_rows": 288320,
-    "bhav_hist_last_date": "2025-11-21",
-    "deliverables_rows": 3038,
+    "bhav_hist_rows": 291357,
+    "bhav_hist_last_date": "2025-12-05",
+    "deliverables_rows": 3039,
     "bulk_rows": 18798,
     "block_rows": 2059,
-    "hi52w_rows": 3295,
-    "tech_latest_rows": 3038,
-    "tech_latest_last_date": "2025-11-21"
+    "hi52w_rows": 3311,
+    "tech_latest_rows": 3039,
+    "tech_latest_last_date": "2025-12-05"
   },
   "diagnostics": [
     {
@@ -547,6 +548,29 @@
       "norm_null_date": 0,
       "norm_null_symbol": 0,
       "new_rows": 0
+    },
+    {
+      "file": "sec_bhavdata_full_05122025.csv",
+      "raw_rows": 3039,
+      "raw_cols": [
+        "SYMBOL",
+        "SERIES",
+        "DATE1",
+        "PREV_CLOSE",
+        "OPEN_PRICE",
+        "HIGH_PRICE",
+        "LOW_PRICE",
+        "LAST_PRICE",
+        "CLOSE_PRICE",
+        "AVG_PRICE",
+        "TTL_TRD_QNTY",
+        "TURNOVER_LACS"
+      ],
+      "detected_date": "2025-12-05",
+      "norm_rows": 3039,
+      "norm_null_date": 0,
+      "norm_null_symbol": 0,
+      "new_rows": 3039
     },
     {
       "file": "sec_bhavdata_full_06072025.csv",

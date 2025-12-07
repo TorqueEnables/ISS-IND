@@ -1,7 +1,7 @@
 StakeLens Insider — Weekly Brief (auto-updated)
-As of: 2025-11-21
-Market breadth (>20-DMA): 27.2%
-Dispersion (4W σ): 10.3%
+As of: 2025-12-05
+Market breadth (>20-DMA): 23.8%
+Dispersion (4W σ): 11.9%
 
 How to read this
 
@@ -11,299 +11,538 @@ How to read this
 
 Next-bar TV buy setup candidates
 
-- **AETHER** — score 100.00, last close 919.35
-  - Plan A trigger distance: 0.50 ATR above
-  - **Plan A**: Entry 936.02, Stop 882.57, Mode BREAKOUT
+- **COFORGE** — score 100.00, last close 1977.90
+  - Plan A trigger distance: 0.34 ATR above
+  - **Plan A**: Entry 1996.27, Stop 1918.71, Mode BREAKOUT
   - **Plan B**: Entry —, Stop —, Mode —
   - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Chemicals — breadth 21% — RS z -0.21 — 10D vs sector +25.8%
-  - View: riding sector + stock momentum
-  - Execution: thin liquidity (<10cr 20D median turnover) — size down / use limit orders.
-
-- **APEX** — score 100.00, last close 331.75
-  - Plan A trigger distance: 0.18 ATR above
-  - **Plan A**: Entry 335.21, Stop 310.24, Mode BREAKOUT
-  - **Plan B**: Entry 285.80, Stop 252.03, Mode RECLAIM
-  - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Consumer Non-Durables — breadth 27% — RS z +0.32 — 10D vs sector +43.0%
-  - View: riding sector + stock momentum
-  - Execution: thin liquidity (<10cr 20D median turnover) — size down / use limit orders.
-
-- **AVANTIFEED** — score 100.00, last close 861.20
-  - Plan A trigger distance: 0.60 ATR above
-  - **Plan A**: Entry 879.62, Stop 827.34, Mode BREAKOUT
-  - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Fast Moving Consumer Goods — breadth 35% — RS z +0.55 — 10D vs sector +20.9%
+  - Sector: Information Technology — breadth 46% — RS z +1.76 — 10D vs sector +12.3%
   - View: riding sector + stock momentum
   - Execution: decent liquidity and moderate ATR – standard sizing.
 
-- **CUPID** — score 100.00, last close 337.03
-  - Plan A trigger distance: 0.24 ATR above
-  - **Plan A**: Entry 340.92, Stop 319.23, Mode BREAKOUT
-  - **Plan B**: Entry 303.09, Stop 262.91, Mode RECLAIM
+- **PTCIL** — score 100.00, last close 18875.00
+  - Plan A trigger distance: 0.23 ATR above
+  - **Plan A**: Entry 18994.95, Stop 18310.70, Mode BREAKOUT
+  - **Plan B**: Entry 17483.40, Stop 17048.40, Mode RECLAIM
   - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Consumer Non-Durables — breadth 27% — RS z +0.32 — 10D vs sector +40.4%
+  - Sector: Capital Goods — breadth 19% — RS z +0.20 — 10D vs sector +14.6%
   - View: riding sector + stock momentum
   - Execution: decent liquidity and moderate ATR – standard sizing.
 
-- **DCBBANK** — score 100.00, last close 186.07
-  - Plan A trigger distance: 0.43 ATR above
-  - **Plan A**: Entry 189.01, Stop 178.55, Mode BREAKOUT
+- **STYLAMIND** — score 100.00, last close 2147.50
+  - Plan A trigger distance: 0.25 ATR above
+  - **Plan A**: Entry 2166.83, Stop 2060.74, Mode BREAKOUT
   - **Plan B**: Entry —, Stop —, Mode —
   - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Financial Services — breadth 37% — RS z +0.69 — 10D vs sector +14.4%
+  - Sector: Non-Energy Minerals — breadth 16% — RS z -0.46 — 10D vs sector +8.4%
   - View: riding sector + stock momentum
-  - Execution: decent liquidity and moderate ATR – standard sizing.
+  - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
 
-- **GOKEX** — score 100.00, last close 937.80
-  - Plan A trigger distance: 0.54 ATR above
-  - **Plan A**: Entry 953.92, Stop 904.67, Mode BREAKOUT
-  - **Plan B**: Entry —, Stop —, Mode —
+- **ASIANPAINT** — score 100.00, last close 2968.50
+  - Plan A trigger distance: 0.22 ATR above
+  - **Plan A**: Entry 2984.20, Stop 2890.00, Mode BREAKOUT
+  - **Plan B**: Entry 2867.67, Stop 2661.84, Mode RECLAIM
   - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Textiles — breadth 57% — RS z +2.73 — 10D vs sector +9.1%
+  - Sector: Consumer Durables — breadth 27% — RS z -0.26 — 10D vs sector +17.9%
   - View: riding sector + stock momentum
   - Execution: decent liquidity and moderate ATR – standard sizing.
 
-- **GRMOVER** — score 100.00, last close 487.20
-  - Plan A trigger distance: 0.74 ATR above
-  - **Plan A**: Entry 501.23, Stop 466.45, Mode BREAKOUT
-  - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Process Industries — breadth 22% — RS z -0.18 — 10D vs sector +13.3%
-  - View: riding sector + stock momentum
-  - Execution: decent liquidity and moderate ATR – standard sizing.
-
-- **RPEL** — score 100.00, last close 1045.25
+- **AUBANK** — score 100.00, last close 960.70
   - Plan A trigger distance: 0.35 ATR above
-  - **Plan A**: Entry 1065.88, Stop 980.14, Mode BREAKOUT
-  - **Plan B**: Entry 1015.89, Stop 854.40, Mode RECLAIM
-  - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Process Industries — breadth 22% — RS z -0.18 — 10D vs sector +18.9%
-  - View: riding sector + stock momentum
-  - Execution: thin liquidity (<10cr 20D median turnover) — size down / use limit orders.
-
-- **SANSERA** — score 100.00, last close 1606.40
-  - Plan A trigger distance: 0.67 ATR above
-  - **Plan A**: Entry 1634.38, Stop 1560.33, Mode BREAKOUT
+  - **Plan A**: Entry 968.26, Stop 936.79, Mode BREAKOUT
   - **Plan B**: Entry —, Stop —, Mode —
   - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Automobile and Auto Components — breadth 46% — RS z +0.48 — 10D vs sector +4.9%
-  - View: riding sector + stock momentum
-  - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
-
-- **TVSSRICHAK** — score 100.00, last close 4702.10
-  - Plan A trigger distance: 0.26 ATR above
-  - **Plan A**: Entry 4749.38, Stop 4501.34, Mode BREAKOUT
-  - **Plan B**: Entry 4435.92, Stop 4180.74, Mode RECLAIM
-  - **Plan C**: Entry 4722.00, Stop 4564.00, Mode INSIDE_DAY
-  - Sector: Consumer Durables — breadth 27% — RS z +0.11 — 10D vs sector +18.0%
-  - View: riding sector + stock momentum
-  - Execution: thin liquidity (<10cr 20D median turnover) — size down / use limit orders.
-
-- **GMRAIRPORT** — score 99.50, last close 104.05
-  - Plan A trigger distance: 0.72 ATR above
-  - **Plan A**: Entry 105.87, Stop 101.26, Mode BREAKOUT
-  - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Services — breadth 28% — RS z -0.05 — 10D vs sector +12.6%
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +6.4%
   - View: riding sector + stock momentum
   - Execution: decent liquidity and moderate ATR – standard sizing.
 
-- **NH** — score 97.90, last close 2043.20
-  - Plan A trigger distance: 0.44 ATR above
-  - **Plan A**: Entry 2080.75, Stop 1949.72, Mode BREAKOUT
+- **BHARATFORG** — score 100.00, last close 1406.00
+  - Plan A trigger distance: 0.21 ATR above
+  - **Plan A**: Entry 1413.75, Stop 1366.01, Mode BREAKOUT
   - **Plan B**: Entry —, Stop —, Mode —
   - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Healthcare — breadth 27% — RS z +0.33 — 10D vs sector +14.3%
+  - Sector: Automobile and Auto Components — breadth 52% — RS z +1.47 — 10D vs sector +5.8%
   - View: riding sector + stock momentum
   - Execution: decent liquidity and moderate ATR – standard sizing.
 
-- **ASIANPAINT** — score 96.00, last close 2876.60
-  - Plan A trigger distance: 0.44 ATR above
-  - **Plan A**: Entry 2905.54, Stop 2803.72, Mode BREAKOUT
+- **BSE** — score 100.00, last close 2815.90
+  - Plan A trigger distance: 0.22 ATR above
+  - **Plan A**: Entry 2838.36, Stop 2702.51, Mode BREAKOUT
   - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry 2895.60, Stop 2854.10, Mode INSIDE_DAY
-  - Sector: Consumer Durables — breadth 27% — RS z +0.11 — 10D vs sector +13.7%
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +8.6%
   - View: riding sector + stock momentum
   - Execution: decent liquidity and moderate ATR – standard sizing.
 
-- **GPPL** — score 94.40, last close 177.95
-  - Plan A trigger distance: 0.66 ATR above
-  - **Plan A**: Entry 181.90, Stop 171.33, Mode BREAKOUT
-  - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Services — breadth 28% — RS z -0.05 — 10D vs sector +6.0%
-  - View: riding sector + stock momentum
-  - Execution: decent liquidity and moderate ATR – standard sizing.
-
-- **SENORES** — score 93.30, last close 819.55
-  - Plan A trigger distance: 0.55 ATR above
-  - **Plan A**: Entry 835.26, Stop 788.34, Mode BREAKOUT
-  - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry 831.00, Stop 811.95, Mode INSIDE_DAY
-  - Sector: OTHER — breadth 37% — RS z +0.42 — 10D vs sector +2.7%
-  - View: riding sector + stock momentum
-  - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
-
-- **UJJIVANSFB** — score 93.00, last close 54.16
-  - Plan A trigger distance: 0.51 ATR above
-  - **Plan A**: Entry 54.90, Stop 52.55, Mode BREAKOUT
-  - **Plan B**: Entry 52.80, Stop 51.68, Mode RECLAIM
-  - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Financial Services — breadth 37% — RS z +0.69 — 10D vs sector +5.5%
-  - View: riding sector + stock momentum
-  - Execution: decent liquidity and moderate ATR – standard sizing.
-
-- **ANURAS** — score 89.80, last close 1246.80
-  - Plan A trigger distance: 0.41 ATR above
-  - **Plan A**: Entry 1259.82, Stop 1211.49, Mode BREAKOUT
-  - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Chemicals — breadth 21% — RS z -0.21 — 10D vs sector +20.0%
-  - View: riding sector + stock momentum
-  - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
-
-- **HEROMOTOCO** — score 85.70, last close 6002.50
+- **CIGNITITEC** — score 100.00, last close 1910.00
   - Plan A trigger distance: 0.40 ATR above
-  - **Plan A**: Entry 6059.05, Stop 5848.15, Mode BREAKOUT
-  - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry 6038.00, Stop 5957.50, Mode INSIDE_DAY
-  - Sector: Automobile and Auto Components — breadth 46% — RS z +0.48 — 10D vs sector +12.7%
-  - View: riding sector + stock momentum
-  - Execution: decent liquidity and moderate ATR – standard sizing.
-
-- **AUBANK** — score 83.90, last close 915.35
-  - Plan A trigger distance: 0.65 ATR above
-  - **Plan A**: Entry 927.74, Stop 894.50, Mode BREAKOUT
+  - **Plan A**: Entry 1932.57, Stop 1847.17, Mode BREAKOUT
   - **Plan B**: Entry —, Stop —, Mode —
   - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Financial Services — breadth 37% — RS z +0.69 — 10D vs sector +3.6%
-  - View: riding sector + stock momentum
-  - Execution: decent liquidity and moderate ATR – standard sizing.
-
-- **NIITMTS** — score 78.30, last close 361.75
-  - Plan A trigger distance: 0.31 ATR above
-  - **Plan A**: Entry 366.05, Stop 346.70, Mode BREAKOUT
-  - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Commercial Services — breadth 14% — RS z -0.38 — 10D vs sector +16.9%
+  - Sector: Information Technology — breadth 46% — RS z +1.76 — 10D vs sector +12.1%
   - View: riding sector + stock momentum
   - Execution: thin liquidity (<10cr 20D median turnover) — size down / use limit orders.
 
-- **CANFINHOME** — score 76.20, last close 884.95
-  - Plan A trigger distance: 0.40 ATR above
-  - **Plan A**: Entry 894.60, Stop 858.53, Mode BREAKOUT
+- **CANBK** — score 100.00, last close 148.64
+  - Plan A trigger distance: 0.38 ATR above
+  - **Plan A**: Entry 149.98, Stop 144.78, Mode BREAKOUT
   - **Plan B**: Entry —, Stop —, Mode —
-  - **Plan C**: Entry 891.00, Stop 880.90, Mode INSIDE_DAY
-  - Sector: Financial Services — breadth 37% — RS z +0.69 — 10D vs sector +0.6%
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +6.8%
   - View: riding sector + stock momentum
   - Execution: decent liquidity and moderate ATR – standard sizing.
 
-- **UNITDSPR** — score 64.60, last close 1427.10
+- **CUB** — score 100.00, last close 271.85
+  - Plan A trigger distance: 0.30 ATR above
+  - **Plan A**: Entry 275.73, Stop 257.67, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +8.4%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **CUMMINSIND** — score 100.00, last close 4468.90
+  - Plan A trigger distance: 0.37 ATR above
+  - **Plan A**: Entry 4506.89, Stop 4354.60, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Capital Goods — breadth 19% — RS z +0.20 — 10D vs sector +8.4%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **MCX** — score 100.00, last close 10343.00
+  - Plan A trigger distance: 0.21 ATR above
+  - **Plan A**: Entry 10400.27, Stop 10040.38, Mode BREAKOUT
+  - **Plan B**: Entry 9751.21, Stop 9339.87, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +9.9%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **HEROMOTOCO** — score 100.00, last close 6350.50
+  - Plan A trigger distance: 0.39 ATR above
+  - **Plan A**: Entry 6412.67, Stop 6173.24, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Automobile and Auto Components — breadth 52% — RS z +1.47 — 10D vs sector +18.4%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **HINDCOPPER** — score 100.00, last close 371.85
+  - Plan A trigger distance: 0.28 ATR above
+  - **Plan A**: Entry 376.51, Stop 353.44, Mode BREAKOUT
+  - **Plan B**: Entry 339.84, Stop 330.57, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Metals & Mining — breadth 40% — RS z +1.49 — 10D vs sector +13.0%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **IIFL** — score 100.00, last close 569.35
+  - Plan A trigger distance: 0.28 ATR above
+  - **Plan A**: Entry 574.05, Stop 551.05, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +6.4%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **INDUSTOWER** — score 100.00, last close 415.70
+  - Plan A trigger distance: 0.25 ATR above
+  - **Plan A**: Entry 418.54, Stop 403.29, Mode BREAKOUT
+  - **Plan B**: Entry 406.78, Stop 386.19, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Telecommunication — breadth 18% — RS z -0.49 — 10D vs sector +5.7%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **KMEW** — score 100.00, last close 3032.60
+  - Plan A trigger distance: 0.42 ATR above
+  - **Plan A**: Entry 3120.46, Stop 2801.87, Mode BREAKOUT
+  - **Plan B**: Entry 2785.47, Stop 2514.51, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: OTHER — breadth 31% — RS z +0.47 — 10D vs sector +8.4%
+  - View: riding sector + stock momentum
+  - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
+
+- **KTKBANK** — score 100.00, last close 213.17
+  - Plan A trigger distance: 0.63 ATR above
+  - **Plan A**: Entry 217.47, Stop 205.71, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +19.5%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **LTIM** — score 100.00, last close 6292.00
+  - Plan A trigger distance: 0.74 ATR above
+  - **Plan A**: Entry 6402.24, Stop 6128.89, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Information Technology — breadth 46% — RS z +1.76 — 10D vs sector +11.3%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **SHRIRAMFIN** — score 100.00, last close 854.90
+  - Plan A trigger distance: 0.23 ATR above
+  - **Plan A**: Entry 860.80, Stop 827.03, Mode BREAKOUT
+  - **Plan B**: Entry 826.44, Stop 774.49, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +5.5%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **MUTHOOTFIN** — score 100.00, last close 3800.10
+  - Plan A trigger distance: 0.22 ATR above
+  - **Plan A**: Entry 3822.08, Stop 3689.48, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +15.5%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **NATIONALUM** — score 100.00, last close 273.15
+  - Plan A trigger distance: 0.30 ATR above
+  - **Plan A**: Entry 275.88, Stop 263.04, Mode BREAKOUT
+  - **Plan B**: Entry 262.92, Stop 244.93, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Metals & Mining — breadth 40% — RS z +1.49 — 10D vs sector +9.1%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **PERSISTENT** — score 100.00, last close 6520.50
+  - Plan A trigger distance: 0.23 ATR above
+  - **Plan A**: Entry 6551.30, Stop 6375.31, Mode BREAKOUT
+  - **Plan B**: Entry 6221.50, Stop 5973.22, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Information Technology — breadth 46% — RS z +1.76 — 10D vs sector +11.0%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **SILVER1** — score 100.00, last close 172.42
+  - Plan A trigger distance: 0.23 ATR above
+  - **Plan A**: Entry 173.91, Stop 165.25, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: OTHER — breadth 31% — RS z +0.47 — 10D vs sector +20.1%
+  - View: riding sector + stock momentum
+  - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
+
+- **INDUSINDBK** — score 98.70, last close 870.10
+  - Plan A trigger distance: 0.33 ATR above
+  - **Plan A**: Entry 877.99, Stop 843.81, Mode BREAKOUT
+  - **Plan B**: Entry 851.38, Stop 805.71, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +10.2%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **GMRAIRPORT** — score 97.50, last close 103.51
+  - Plan A trigger distance: 0.33 ATR above
+  - **Plan A**: Entry 104.36, Stop 100.68, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Services — breadth 20% — RS z +0.09 — 10D vs sector +12.1%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **POLICYBZR** — score 95.70, last close 1893.80
   - Plan A trigger distance: 0.24 ATR above
-  - **Plan A**: Entry 1434.71, Stop 1392.58, Mode BREAKOUT
-  - **Plan B**: Entry 1426.58, Stop 1388.73, Mode RECLAIM
+  - **Plan A**: Entry 1908.36, Stop 1828.10, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
   - **Plan C**: Entry —, Stop —, Mode —
-  - Sector: Fast Moving Consumer Goods — breadth 35% — RS z +0.55 — 10D vs sector +1.3%
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +6.7%
   - View: riding sector + stock momentum
   - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **CANFINHOME** — score 95.30, last close 900.80
+  - Plan A trigger distance: 0.45 ATR above
+  - **Plan A**: Entry 911.62, Stop 874.25, Mode BREAKOUT
+  - **Plan B**: Entry 891.09, Stop 864.71, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +3.5%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **ANURAS** — score 94.40, last close 1261.40
+  - Plan A trigger distance: 0.41 ATR above
+  - **Plan A**: Entry 1274.99, Stop 1224.83, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Chemicals — breadth 19% — RS z -0.27 — 10D vs sector +21.1%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **EUREKAFORB** — score 93.90, last close 635.50
+  - Plan A trigger distance: 0.32 ATR above
+  - **Plan A**: Entry 642.94, Stop 610.28, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Consumer Durables — breadth 27% — RS z -0.26 — 10D vs sector +20.1%
+  - View: riding sector + stock momentum
+  - Execution: thin liquidity (<10cr 20D median turnover) — size down / use limit orders.
+
+- **UNIONBANK** — score 91.10, last close 153.30
+  - Plan A trigger distance: 0.25 ATR above
+  - **Plan A**: Entry 154.31, Stop 148.77, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +0.8%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **INFY** — score 90.70, last close 1616.20
+  - Plan A trigger distance: 0.61 ATR above
+  - **Plan A**: Entry 1636.87, Stop 1579.01, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Information Technology — breadth 46% — RS z +1.76 — 10D vs sector +6.6%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **UPL** — score 89.00, last close 759.10
+  - Plan A trigger distance: 0.27 ATR above
+  - **Plan A**: Entry 763.41, Stop 741.81, Mode BREAKOUT
+  - **Plan B**: Entry 759.44, Stop 726.42, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Chemicals — breadth 19% — RS z -0.27 — 10D vs sector +5.5%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **EICHERMOT** — score 88.90, last close 7208.00
+  - Plan A trigger distance: 0.21 ATR above
+  - **Plan A**: Entry 7241.11, Stop 7038.56, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Automobile and Auto Components — breadth 52% — RS z +1.47 — 10D vs sector +4.9%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **SANDHAR** — score 86.60, last close 548.90
+  - Plan A trigger distance: 0.60 ATR above
+  - **Plan A**: Entry 567.31, Stop 515.12, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Consumer Durables — breadth 27% — RS z -0.26 — 10D vs sector +4.5%
+  - View: riding sector + stock momentum
+  - Execution: thin liquidity (<10cr 20D median turnover) — size down / use limit orders.
+
+- **MFSL** — score 84.20, last close 1690.20
+  - Plan A trigger distance: 0.25 ATR above
+  - **Plan A**: Entry 1701.84, Stop 1638.55, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry 1694.80, Stop 1665.70, Mode INSIDE_DAY
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +5.8%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **SHRIPISTON** — score 81.30, last close 2837.90
+  - Plan A trigger distance: 0.57 ATR above
+  - **Plan A**: Entry 2892.89, Stop 2730.91, Mode BREAKOUT
+  - **Plan B**: Entry 2721.40, Stop 2648.40, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Automobile and Auto Components — breadth 52% — RS z +1.47 — 10D vs sector +6.3%
+  - View: riding sector + stock momentum
+  - Execution: thin liquidity (<10cr 20D median turnover) — size down / use limit orders.
+
+- **HINDZINC** — score 80.90, last close 498.10
+  - Plan A trigger distance: 0.42 ATR above
+  - **Plan A**: Entry 503.86, Stop 482.97, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Metals & Mining — breadth 40% — RS z +1.49 — 10D vs sector +5.7%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **PNB** — score 79.50, last close 121.71
+  - Plan A trigger distance: 0.23 ATR above
+  - **Plan A**: Entry 122.28, Stop 118.96, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +0.9%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **INDIACEM** — score 77.80, last close 416.20
+  - Plan A trigger distance: 0.50 ATR above
+  - **Plan A**: Entry 423.12, Stop 401.00, Mode BREAKOUT
+  - **Plan B**: Entry 405.21, Stop 390.75, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Construction Materials — breadth 6% — RS z -0.31 — 10D vs sector +13.4%
+  - View: riding sector + stock momentum
+  - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
+
+- **UNITDSPR** — score 77.80, last close 1455.60
+  - Plan A trigger distance: 0.20 ATR above
+  - **Plan A**: Entry 1461.89, Stop 1420.44, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Fast Moving Consumer Goods — breadth 23% — RS z +0.84 — 10D vs sector +4.2%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **SONACOMS** — score 75.00, last close 492.85
+  - Plan A trigger distance: 0.69 ATR above
+  - **Plan A**: Entry 501.87, Stop 478.40, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Automobile and Auto Components — breadth 52% — RS z +1.47 — 10D vs sector +1.4%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **KIRIINDUS** — score 74.10, last close 609.85
+  - Plan A trigger distance: 0.55 ATR above
+  - **Plan A**: Entry 620.92, Stop 587.67, Mode BREAKOUT
+  - **Plan B**: Entry 542.39, Stop 537.14, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+  - Sector: Process Industries — breadth 13% — RS z -0.34 — 10D vs sector +20.5%
+  - View: riding sector + stock momentum
+  - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
 
 
 GO (ready / high conviction)
 
-- No GO setups this run.
-- Use the watchlist as your hunting ground for emerging ideas.
+**COFORGE** — score 100.00, last close 1977.90
+
+  - **Plan A**: Entry 1996.27, Stop 1918.71, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+
+  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W, COILED, BLOCK+
+  - Proximity to trigger: 0.34 ATR
+  - Go reason: MARKET_OK
+  - Sector: Information Technology — breadth 46% — RS z +1.76 — 10D vs sector +12.3%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+**PTCIL** — score 100.00, last close 18875.00
+
+  - **Plan A**: Entry 18994.95, Stop 18310.70, Mode BREAKOUT
+  - **Plan B**: Entry 17483.40, Stop 17048.40, Mode RECLAIM
+  - **Plan C**: Entry —, Stop —, Mode —
+
+  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
+  - Proximity to trigger: 0.23 ATR
+  - Go reason: MARKET_OK
+  - Sector: Capital Goods — breadth 19% — RS z +0.20 — 10D vs sector +14.6%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+**STYLAMIND** — score 100.00, last close 2147.50
+
+  - **Plan A**: Entry 2166.83, Stop 2060.74, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+
+  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W, COILED
+  - Proximity to trigger: 0.25 ATR
+  - Go reason: MARKET_OK
+  - Sector: Non-Energy Minerals — breadth 16% — RS z -0.46 — 10D vs sector +8.4%
+  - View: riding sector + stock momentum
+  - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
+
+**HINDZINC** — score 80.90, last close 498.10
+
+  - **Plan A**: Entry 503.86, Stop 482.97, Mode BREAKOUT
+  - **Plan B**: Entry —, Stop —, Mode —
+  - **Plan C**: Entry —, Stop —, Mode —
+
+  - Signals: RS_LEADER, POCKET_PIVOT, UPVOL_DOM, NEAR_52W
+  - Proximity to trigger: 0.42 ATR
+  - Go reason: MARKET_OK
+  - Sector: Metals & Mining — breadth 40% — RS z +1.49 — 10D vs sector +5.7%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
 
 Watchlist (developing setups)
 
-- **AETHER** — score 100.00, last close 919.35
-  - Proximity: 0.50 ATR
-  - Note: Far (0.50 ATR); Not coiled; LQ<10cr (7.1); No delivery edge; No fresh insider; Sector weak (b0.21, z-0.21)
-  - Sector: Chemicals — breadth 21% — RS z -0.21 — 10D vs sector +25.8%
+- **ASIANPAINT** — score 100.00, last close 2968.50
+  - Proximity: 0.22 ATR
+  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.27, z-0.26)
+  - Sector: Consumer Durables — breadth 27% — RS z -0.26 — 10D vs sector +17.9%
   - View: riding sector + stock momentum
 
-- **APEX** — score 100.00, last close 331.75
-  - Proximity: 0.18 ATR
-  - Note: Not coiled; LQ<10cr (6.7); No delivery edge; No fresh insider; Sector weak (b0.27, z+0.32)
-  - Sector: Consumer Non-Durables — breadth 27% — RS z +0.32 — 10D vs sector +43.0%
-  - View: riding sector + stock momentum
-
-- **AVANTIFEED** — score 100.00, last close 861.20
-  - Proximity: 0.60 ATR
-  - Note: Far (0.60 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.35, z+0.55)
-  - Sector: Fast Moving Consumer Goods — breadth 35% — RS z +0.55 — 10D vs sector +20.9%
-  - View: riding sector + stock momentum
-
-- **CUPID** — score 100.00, last close 337.03
-  - Proximity: 0.24 ATR
-  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.27, z+0.32)
-  - Sector: Consumer Non-Durables — breadth 27% — RS z +0.32 — 10D vs sector +40.4%
-  - View: riding sector + stock momentum
-
-- **DCBBANK** — score 100.00, last close 186.07
-  - Proximity: 0.43 ATR
-  - Note: Not coiled; RR_HI55<0.8 (0.01); No delivery edge; No fresh insider; Sector weak (b0.37, z+0.69)
-  - Sector: Financial Services — breadth 37% — RS z +0.69 — 10D vs sector +14.4%
-  - View: riding sector + stock momentum
-
-- **GOKEX** — score 100.00, last close 937.80
-  - Proximity: 0.54 ATR
-  - Note: Weak close; Far (0.54 ATR); RR_HI55<0.8 (0.02); No delivery edge; No fresh insider
-  - Sector: Textiles — breadth 57% — RS z +2.73 — 10D vs sector +9.1%
-  - View: riding sector + stock momentum
-
-- **GRMOVER** — score 100.00, last close 487.20
-  - Proximity: 0.74 ATR
-  - Note: Weak close; Far (0.74 ATR); Not coiled; RR_HI55<0.8 (0.05); No delivery edge; No fresh insider; Sector weak (b0.22, z-0.18)
-  - Sector: Process Industries — breadth 22% — RS z -0.18 — 10D vs sector +13.3%
-  - View: riding sector + stock momentum
-
-- **RPEL** — score 100.00, last close 1045.25
+- **AUBANK** — score 100.00, last close 960.70
   - Proximity: 0.35 ATR
-  - Note: Not coiled; LQ<10cr (8.3); RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.22, z-0.18)
-  - Sector: Process Industries — breadth 22% — RS z -0.18 — 10D vs sector +18.9%
+  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.39, z+0.99)
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +6.4%
   - View: riding sector + stock momentum
 
-- **SANSERA** — score 100.00, last close 1606.40
-  - Proximity: 0.67 ATR
-  - Note: Weak close; Far (0.67 ATR); No delivery edge; No fresh insider; Sector weak (b0.46, z+0.48)
-  - Sector: Automobile and Auto Components — breadth 46% — RS z +0.48 — 10D vs sector +4.9%
+- **BHARATFORG** — score 100.00, last close 1406.00
+  - Proximity: 0.21 ATR
+  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.52, z+1.47)
+  - Sector: Automobile and Auto Components — breadth 52% — RS z +1.47 — 10D vs sector +5.8%
   - View: riding sector + stock momentum
 
-- **TVSSRICHAK** — score 100.00, last close 4702.10
-  - Proximity: 0.26 ATR
-  - Note: Not coiled; LQ<10cr (5.6); RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.27, z+0.11)
-  - Sector: Consumer Durables — breadth 27% — RS z +0.11 — 10D vs sector +18.0%
+- **BSE** — score 100.00, last close 2815.90
+  - Proximity: 0.22 ATR
+  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.39, z+0.99)
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +8.6%
   - View: riding sector + stock momentum
 
-- **GMRAIRPORT** — score 99.50, last close 104.05
-  - Proximity: 0.72 ATR
-  - Note: Weak close; Far (0.72 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.28, z-0.05)
-  - Sector: Services — breadth 28% — RS z -0.05 — 10D vs sector +12.6%
+- **CANBK** — score 100.00, last close 148.64
+  - Proximity: 0.38 ATR
+  - Note: Not coiled; RR_HI55<0.8 (0.35); No delivery edge; No fresh insider; Sector weak (b0.39, z+0.99)
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +6.8%
   - View: riding sector + stock momentum
 
-- **NH** — score 97.90, last close 2043.20
-  - Proximity: 0.44 ATR
-  - Note: Not coiled; RR_HI55<0.8 (0.10); No delivery edge; No fresh insider; Sector weak (b0.27, z+0.33)
-  - Sector: Healthcare — breadth 27% — RS z +0.33 — 10D vs sector +14.3%
+- **CIGNITITEC** — score 100.00, last close 1910.00
+  - Proximity: 0.40 ATR
+  - Note: Weak close; LQ<10cr (8.9); No delivery edge; No fresh insider; Sector weak (b0.46, z+1.76)
+  - Sector: Information Technology — breadth 46% — RS z +1.76 — 10D vs sector +12.1%
   - View: riding sector + stock momentum
 
-- **ASIANPAINT** — score 96.00, last close 2876.60
-  - Proximity: 0.44 ATR
-  - Note: Weak close; Not coiled; RR_HI55<0.8 (0.21); No delivery edge; No fresh insider; Sector weak (b0.27, z+0.11)
-  - Sector: Consumer Durables — breadth 27% — RS z +0.11 — 10D vs sector +13.7%
+- **CUB** — score 100.00, last close 271.85
+  - Proximity: 0.30 ATR
+  - Note: Not coiled; RR_HI55<0.8 (0.41); No delivery edge; No fresh insider; Sector weak (b0.39, z+0.99)
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +8.4%
   - View: riding sector + stock momentum
 
-- **GPPL** — score 94.40, last close 177.95
-  - Proximity: 0.66 ATR
-  - Note: Weak close; Far (0.66 ATR); Not coiled; RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.28, z-0.05)
-  - Sector: Services — breadth 28% — RS z -0.05 — 10D vs sector +6.0%
+- **CUMMINSIND** — score 100.00, last close 4468.90
+  - Proximity: 0.37 ATR
+  - Note: Weak close; No delivery edge; No fresh insider; Sector weak (b0.19, z+0.20)
+  - Sector: Capital Goods — breadth 19% — RS z +0.20 — 10D vs sector +8.4%
   - View: riding sector + stock momentum
 
-- **SENORES** — score 93.30, last close 819.55
-  - Proximity: 0.55 ATR
-  - Note: Weak close; Far (0.55 ATR); RR_HI55<0.8 (0.00); No delivery edge; No fresh insider; Sector weak (b0.37, z+0.42)
-  - Sector: OTHER — breadth 37% — RS z +0.42 — 10D vs sector +2.7%
+- **HEROMOTOCO** — score 100.00, last close 6350.50
+  - Proximity: 0.39 ATR
+  - Note: Weak close; Not coiled; No delivery edge; No fresh insider; Sector weak (b0.52, z+1.47)
+  - Sector: Automobile and Auto Components — breadth 52% — RS z +1.47 — 10D vs sector +18.4%
+  - View: riding sector + stock momentum
+
+- **HINDCOPPER** — score 100.00, last close 371.85
+  - Proximity: 0.28 ATR
+  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.40, z+1.49)
+  - Sector: Metals & Mining — breadth 40% — RS z +1.49 — 10D vs sector +13.0%
+  - View: riding sector + stock momentum
+
+- **IIFL** — score 100.00, last close 569.35
+  - Proximity: 0.28 ATR
+  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.39, z+0.99)
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +6.4%
+  - View: riding sector + stock momentum
+
+- **INDUSTOWER** — score 100.00, last close 415.70
+  - Proximity: 0.25 ATR
+  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.18, z-0.49)
+  - Sector: Telecommunication — breadth 18% — RS z -0.49 — 10D vs sector +5.7%
+  - View: riding sector + stock momentum
+
+- **KMEW** — score 100.00, last close 3032.60
+  - Proximity: 0.42 ATR
+  - Note: Not coiled; No delivery edge; No fresh insider; Sector weak (b0.31, z+0.47)
+  - Sector: OTHER — breadth 31% — RS z +0.47 — 10D vs sector +8.4%
+  - View: riding sector + stock momentum
+
+- **KTKBANK** — score 100.00, last close 213.17
+  - Proximity: 0.63 ATR
+  - Note: Weak close; Far (0.63 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.39, z+0.99)
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +19.5%
+  - View: riding sector + stock momentum
+
+- **LTIM** — score 100.00, last close 6292.00
+  - Proximity: 0.74 ATR
+  - Note: Weak close; Far (0.74 ATR); Not coiled; No delivery edge; No fresh insider; Sector weak (b0.46, z+1.76)
+  - Sector: Information Technology — breadth 46% — RS z +1.76 — 10D vs sector +11.3%
   - View: riding sector + stock momentum
 
