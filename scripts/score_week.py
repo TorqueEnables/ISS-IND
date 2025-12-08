@@ -4,6 +4,8 @@ StakeLens Insider — Weekly scorer with Sector Advantage + Macro Regimes.
 Now includes Plan-B (Reclaim) and Plan-C (Inside-day) entry options and
 a volatility/tick-aware breakout buffer, plus flow-aware scoring using
 insider trades, bulk/block deals, and delivery strength.
+
+Now also emits an INTRA_DAILY.csv for intraday-friendly symbols.
 """
 
 import argparse, re
@@ -974,7 +976,7 @@ def main():
             "TB_DIST_TO_BREAK_PCT": round(dist_to_break_pct, 2) if np.isfinite(dist_to_break_pct) else np.nan,
         })
 
-        out_df = pd.DataFrame(rows)
+    out_df = pd.DataFrame(rows)
 
     # --- New: TV_BUY_SETUP flag for "likely next-bar TV buy" ---
     # Make sure helper columns exist (defensive)
@@ -1003,7 +1005,71 @@ def main():
 
     out_df["TV_BUY_SETUP"] = tv_mask.astype(int)
 
-    # Existing behaviour: sort and keep top N
+    # ------------------------------------------------------------------
+    # New: INTRADAY universe + score for VMDM-style intraday trading
+    # ------------------------------------------------------------------
+    def _intraday_lq_score(row):
+        t20 = float(row.get("TurnoverCr_med20", 0.0) or 0.0)
+        # 0 at 0 cr, 1 at >= 25 cr
+        return max(0.0, min(1.0, t20 / 25.0))
+
+    def _intraday_atr_score(row):
+        atrp = float(row.get("ATR_PCT", 0.0) or 0.0)
+        # 0 at <= 2%, 1 at >= 6%
+        if not np.isfinite(atrp):
+            return 0.0
+        return max(0.0, min(1.0, (atrp - 0.02) / (0.06 - 0.02)))
+
+    def _intraday_trend_score(row):
+        rs4 = float(row.get("RS_4W_Z", 0.0) or 0.0)
+        return max(0.0, min(1.0, abs(rs4) / 1.5))
+
+    def _intraday_power_score(row):
+        pp = int(row.get("PocketPivot10", 0) or 0)
+        why = str(row.get("WHY", "") or "")
+        if pp == 1:
+            return 1.0
+        if "UPVOL_DOM" in why:
+            return 0.5
+        return 0.0
+
+    def _intraday_score(row):
+        lq    = _intraday_lq_score(row)
+        atr_s = _intraday_atr_score(row)
+        tr_s  = _intraday_trend_score(row)
+        pw_s  = _intraday_power_score(row)
+        # ATR + Liquidity dominate, then RS magnitude, then power
+        return round(40.0 * atr_s + 30.0 * lq + 20.0 * tr_s + 10.0 * pw_s, 1)
+
+    out_df["INTRA_SCORE"] = out_df.apply(_intraday_score, axis=1)
+
+    # Gate for intraday-suitable names
+    out_df["INTRA_OK"] = (
+        (out_df["TurnoverCr_med20"].fillna(0.0) >= 10.0) &
+        (out_df["ATR_PCT"].between(0.02, 0.06)) &
+        (out_df["RS_4W_Z"].abs() >= 0.3)
+    )
+
+    intra_df = (
+        out_df[out_df["INTRA_OK"]]
+        .sort_values(["INTRA_SCORE", "TurnoverCr_med20"],
+                     ascending=[False, False])
+        .head(15)  # tweak depending on how many names you want per day
+    )
+
+    intra_cols = [
+        "Symbol", "Close", "INTRA_SCORE",
+        "TurnoverCr_med20", "ATR_PCT", "RS_4W_Z",
+        "TV_BUY_SETUP", "R_SCORE"
+    ]
+    for c in intra_cols:
+        if c not in intra_df.columns:
+            intra_df[c] = np.nan
+
+    Path("out").mkdir(parents=True, exist_ok=True)
+    intra_df[intra_cols].to_csv("out/INTRA_DAILY.csv", index=False)
+
+    # Existing behaviour: sort and keep top N for weekly pack
     out_df = out_df.sort_values(["GO","R_SCORE"], ascending=[False, False]).head(args.top)
     out_df.to_csv(out_path, index=False)
 
@@ -1026,10 +1092,12 @@ def main():
         f"- Macro tighten active: {'YES' if high_vol_tighten else 'NO'}",
         f"- Sector map: {'present' if secmap is not None else 'absent'}",
     ]
-    Path("out").mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(report) + "\n", encoding="utf-8")
 
-    print(f"Wrote {out_path} with {len(out_df)} rows for {pd.to_datetime(last_day).date()} (GO={go_count})")
+    print(
+        f"Wrote {out_path} with {len(out_df)} rows for {pd.to_datetime(last_day).date()} "
+        f"(GO={go_count}); INTRA_DAILY rows={len(intra_df)}"
+    )
 
 if __name__ == "__main__":
     main()
