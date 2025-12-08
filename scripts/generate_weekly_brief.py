@@ -5,6 +5,8 @@ StakeLens Insider — Brief generator.
 Reads WEEK_PACK.csv and emits a human-friendly weekly brief:
 
 - Header: date, breadth, dispersion
+- Next-bar TV buy setups: names where Plan A is realistically triggerable soon
+- Intraday focus list: names the engine thinks are best suited for intraday trading
 - GO list: one block per stock with clear bullets and indentation
 - Watchlist: top non-GO names with concise context
 
@@ -12,6 +14,8 @@ Uses the enriched fields from score_week.py:
 - Sector: Sector, SECTOR_BREADTH20, SEC_RS_Z
 - Stock vs sector: RET_10, SEC_RET_10, RET10_EDGE_SEC
 - Momentum flags: SECTOR_MOM_OK, STOCK_VS_SEC_OK
+- TV flag: TV_BUY_SETUP
+- Intraday: INTRA_SCORE, INTRA_OK
 """
 
 import argparse
@@ -184,6 +188,8 @@ def build_how_to(df):
     lines.append("")
     lines.append("- Start with **Plan A**. If it does not trigger, look at Plan B (reclaim) or Plan C (inside-day), when present.")
     lines.append("- Keep **risk per trade fixed**. Avoid wide gap-ups; prefer orderly triggers.")
+    lines.append("- Use **Next-bar TV buy setups** as your shortlist for TradingView alerts.")
+    lines.append("- Use the **Intraday focus list** as your hunting ground for VMDM / intraday engines.")
     if not pd.isna(breadth):
         if breadth < 0.40:
             lines.append("- Breadth is weak → treat GO as **elite only**, be strict with entries and avoid late chases.")
@@ -195,6 +201,7 @@ def build_how_to(df):
         lines.append("- Prioritize names with **clear GO reasons** or **strong sector support**.")
     lines.append("")
     return "\n".join(lines)
+
 
 def build_tv_buy_section(df):
     """
@@ -214,7 +221,7 @@ def build_tv_buy_section(df):
 
     tv = df[df["TV_BUY_SETUP"].astype(bool)].copy()
     if tv.empty:
-        lines.append("- None this run. Focus on the GO list and Watchlist instead.")
+        lines.append("- None this run. Focus on the GO list and Intraday/watchlist instead.")
         lines.append("")
         return "\n".join(lines)
 
@@ -238,6 +245,66 @@ def build_tv_buy_section(df):
     lines.append("")
     return "\n".join(lines)
 
+
+def build_intraday_section(df, max_names=12):
+    """
+    Section: Intraday focus list, using INTRA_SCORE / INTRA_OK.
+    Designed to feed VMDM / other intraday engines.
+    """
+    lines = []
+    lines.append("Intraday focus list (for VMDM / intraday engines)")
+    lines.append("")
+
+    if "INTRA_SCORE" not in df.columns or "INTRA_OK" not in df.columns:
+        lines.append("- Intraday metrics not available in this pack; rerun scoring with the updated score_week.py.")
+        lines.append("")
+        return "\n".join(lines)
+
+    intra = df[df["INTRA_OK"].astype(bool)].copy()
+    if intra.empty:
+        lines.append("- None this run. Use GO + TV setups and your own intraday filters.")
+        lines.append("")
+        return "\n".join(lines)
+
+    # Sort: highest intraday score, then better liquidity
+    sort_cols = ["INTRA_SCORE"]
+    ascending = [False]
+    if "TurnoverCr_med20" in intra.columns:
+        sort_cols.append("TurnoverCr_med20")
+        ascending.append(False)
+
+    intra = intra.sort_values(sort_cols, ascending=ascending).head(max_names)
+
+    for _, r in intra.iterrows():
+        sym    = r["Symbol"]
+        score  = _fmt_score(r.get("INTRA_SCORE", np.nan))
+        close  = _fmt_price(r.get("Close", np.nan))
+        atrpct = r.get("ATR_PCT", np.nan)
+        t20    = r.get("TurnoverCr_med20", np.nan)
+
+        atr_txt = _fmt_pct(atrpct, decimals=1) if not pd.isna(atrpct) else "NA"
+        t20_txt = f"{t20:.1f} cr" if pd.notna(t20) else "NA"
+
+        tv_flag = bool(r.get("TV_BUY_SETUP", 0)) if "TV_BUY_SETUP" in r else False
+        go_flag = bool(r.get("GO", 0)) if "GO" in r else False
+
+        tags = []
+        if go_flag:
+            tags.append("GO")
+        if tv_flag:
+            tags.append("TV_BUY")
+        tag_txt = f" [{', '.join(tags)}]" if tags else ""
+
+        lines.append(f"- **{sym}** — intraday score {score}{tag_txt}, last close {close}")
+        lines.append(f"  - ATR%: {atr_txt}, 20D median turnover: {t20_txt}")
+        lines.append(_sector_context(r))
+        lines.append(_slippage_hint(r))
+        lines.append("")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def build_go_section(go_df):
     lines = []
     lines.append("GO (ready / high conviction)")
@@ -245,7 +312,7 @@ def build_go_section(go_df):
 
     if go_df.empty:
         lines.append("- No GO setups this run.")
-        lines.append("- Use the watchlist as your hunting ground for emerging ideas.")
+        lines.append("- Use the TV section, intraday list and watchlist as your hunting ground.")
         lines.append("")
         return "\n".join(lines)
 
@@ -310,6 +377,7 @@ def build_watch_section(watch_df, limit):
     lines.append("")
     return "\n".join(lines)
 
+
 # ---------- Main ----------
 
 def main():
@@ -340,11 +408,11 @@ def main():
     go_df    = df[df["GO"]].sort_values("R_SCORE", ascending=False)
     watch_df = df[~df["GO"]].copy()
 
-    # <-- THIS is the important part: define parts BEFORE using parts.append(...)
     parts = []
     parts.append(build_header(df))
     parts.append(build_how_to(df))
-    parts.append(build_tv_buy_section(df))                 # NEW: next-bar TV buy section
+    parts.append(build_tv_buy_section(df))                 # Next-bar TV-buy section
+    parts.append(build_intraday_section(df, max_names=12)) # NEW: intraday focus list
     parts.append(build_go_section(go_df))
     parts.append(build_watch_section(watch_df, args.watch_limit))
 
