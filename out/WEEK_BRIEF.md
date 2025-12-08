@@ -7,6 +7,8 @@ How to read this
 
 - Start with **Plan A**. If it does not trigger, look at Plan B (reclaim) or Plan C (inside-day), when present.
 - Keep **risk per trade fixed**. Avoid wide gap-ups; prefer orderly triggers.
+- Use **Next-bar TV buy setups** as your shortlist for TradingView alerts.
+- Use the **Intraday focus list** as your hunting ground for VMDM / intraday engines.
 - Breadth is weak → treat GO as **elite only**, be strict with entries and avoid late chases.
 
 Next-bar TV buy setup candidates
@@ -397,6 +399,81 @@ Next-bar TV buy setup candidates
   - Sector: Process Industries — breadth 13% — RS z -0.34 — 10D vs sector +20.5%
   - View: riding sector + stock momentum
   - Execution: moderate liquidity (~10–20cr 20D median turnover) — size down / use limit orders.
+
+
+Intraday focus list (for VMDM / intraday engines)
+
+- **CUB** — intraday score 87.40 [TV_BUY], last close 271.85
+  - ATR%: 4.7%, 20D median turnover: 78.5 cr
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +8.4%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **HINDCOPPER** — intraday score 79.80 [TV_BUY], last close 371.85
+  - ATR%: 4.5%, 20D median turnover: 181.7 cr
+  - Sector: Metals & Mining — breadth 40% — RS z +1.49 — 10D vs sector +13.0%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **BSE** — intraday score 76.60 [TV_BUY], last close 2815.90
+  - ATR%: 3.7%, 20D median turnover: 1110.4 cr
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +8.6%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **NATIONALUM** — intraday score 73.70 [TV_BUY], last close 273.15
+  - ATR%: 3.4%, 20D median turnover: 241.3 cr
+  - Sector: Metals & Mining — breadth 40% — RS z +1.49 — 10D vs sector +9.1%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **KTKBANK** — intraday score 71.80 [TV_BUY], last close 213.17
+  - ATR%: 3.2%, 20D median turnover: 26.5 cr
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +19.5%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **POLICYBZR** — intraday score 71.50 [TV_BUY], last close 1893.80
+  - ATR%: 3.2%, 20D median turnover: 252.7 cr
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +6.7%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **SHRIRAMFIN** — intraday score 69.60 [TV_BUY], last close 854.90
+  - ATR%: 3.0%, 20D median turnover: 569.0 cr
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +5.5%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **IIFL** — intraday score 69.20 [TV_BUY], last close 569.35
+  - ATR%: 2.9%, 20D median turnover: 69.0 cr
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +6.4%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **INDUSINDBK** — intraday score 67.50 [TV_BUY], last close 870.10
+  - ATR%: 2.7%, 20D median turnover: 328.4 cr
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +10.2%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **COFORGE** — intraday score 67.20 [GO, TV_BUY], last close 1977.90
+  - ATR%: 2.7%, 20D median turnover: 281.4 cr
+  - Sector: Information Technology — breadth 46% — RS z +1.76 — 10D vs sector +12.3%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **INDUSTOWER** — intraday score 67.10 [TV_BUY], last close 415.70
+  - ATR%: 2.7%, 20D median turnover: 246.7 cr
+  - Sector: Telecommunication — breadth 18% — RS z -0.49 — 10D vs sector +5.7%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
+
+- **MCX** — intraday score 66.60 [TV_BUY], last close 10343.00
+  - ATR%: 2.7%, 20D median turnover: 441.1 cr
+  - Sector: Financial Services — breadth 39% — RS z +0.99 — 10D vs sector +9.9%
+  - View: riding sector + stock momentum
+  - Execution: decent liquidity and moderate ATR – standard sizing.
 
 
 GO (ready / high conviction)
